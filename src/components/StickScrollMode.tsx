@@ -3,14 +3,14 @@ import { GamepadMapping, StickDirection, StickMappingType } from '../hooks/useGa
 import { MappingActions } from './MappingPanel'
 import {
   DEFAULT_STICK_THRESHOLD_MOUSE,
-  DEFAULT_MOUSE_SENSITIVITY,
-  DEFAULT_MOUSE_ACCELERATION,
-  DEFAULT_MOUSE_INVERT_X,
-  DEFAULT_MOUSE_INVERT_Y,
+  DEFAULT_SCROLL_SENSITIVITY,
+  DEFAULT_SCROLL_ACCELERATION,
+  DEFAULT_SCROLL_INVERT_X,
+  DEFAULT_SCROLL_INVERT_Y,
 } from '../constants/defaults'
 import './MappingPanel.css'
 
-interface StickMouseModeProps {
+interface StickScrollModeProps {
   mapping?: GamepadMapping
   stickIndex: number
   onSetAxisMapping: (stickIndex: number, direction: StickDirection, key: string, label: string, threshold: number, type?: StickMappingType, sensitivity?: number, acceleration?: number, invertX?: boolean, invertY?: boolean) => void
@@ -18,20 +18,20 @@ interface StickMouseModeProps {
   previousMappingType: StickMappingType | null
 }
 
-export function StickMouseMode({
+export function StickScrollMode({
   mapping,
   stickIndex,
   onSetAxisMapping,
   onRemoveAxisMapping,
   previousMappingType,
-}: StickMouseModeProps) {
+}: StickScrollModeProps) {
   const [threshold, setThreshold] = useState(DEFAULT_STICK_THRESHOLD_MOUSE)
-  const [sensitivity, setSensitivity] = useState(DEFAULT_MOUSE_SENSITIVITY)
-  const [acceleration, setAcceleration] = useState(DEFAULT_MOUSE_ACCELERATION)
-  const [invertX, setInvertX] = useState(DEFAULT_MOUSE_INVERT_X)
-  const [invertY, setInvertY] = useState(DEFAULT_MOUSE_INVERT_Y)
+  const [sensitivity, setSensitivity] = useState(DEFAULT_SCROLL_SENSITIVITY)
+  const [acceleration, setAcceleration] = useState(DEFAULT_SCROLL_ACCELERATION)
+  const [invertX, setInvertX] = useState(DEFAULT_SCROLL_INVERT_X)
+  const [invertY, setInvertY] = useState(DEFAULT_SCROLL_INVERT_Y)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const originalMouseMappingRef = useRef<{
+  const originalScrollMappingRef = useRef<{
     threshold: number
     sensitivity: number
     acceleration: number
@@ -40,84 +40,77 @@ export function StickMouseMode({
   } | null>(null)
 
   const stickMappings = mapping?.axisMappings.filter(m => m.stickIndex === stickIndex) || []
-  const mouseMapping = stickMappings.find(m => m.type === 'mouse')
+  const scrollMapping = stickMappings.find(m => m.type === 'scroll')
 
-  // Sync state with mouse mapping when it changes
   useEffect(() => {
-    if (mouseMapping) {
+    if (scrollMapping) {
       const values = {
-        threshold: mouseMapping.threshold,
-        sensitivity: mouseMapping.sensitivity ?? DEFAULT_MOUSE_SENSITIVITY,
-        acceleration: mouseMapping.acceleration ?? DEFAULT_MOUSE_ACCELERATION,
-        invertX: mouseMapping.invertX ?? DEFAULT_MOUSE_INVERT_X,
-        invertY: mouseMapping.invertY ?? DEFAULT_MOUSE_INVERT_Y,
+        threshold: scrollMapping.threshold,
+        sensitivity: scrollMapping.sensitivity ?? DEFAULT_SCROLL_SENSITIVITY,
+        acceleration: scrollMapping.acceleration ?? DEFAULT_SCROLL_ACCELERATION,
+        invertX: scrollMapping.invertX ?? DEFAULT_SCROLL_INVERT_X,
+        invertY: scrollMapping.invertY ?? DEFAULT_SCROLL_INVERT_Y,
       }
       setThreshold(values.threshold)
       setSensitivity(values.sensitivity)
       setAcceleration(values.acceleration)
       setInvertX(values.invertX)
       setInvertY(values.invertY)
-      originalMouseMappingRef.current = values
+      originalScrollMappingRef.current = values
       setHasUnsavedChanges(false)
     } else {
-      // Initialize defaults
       const values = {
         threshold: DEFAULT_STICK_THRESHOLD_MOUSE,
-        sensitivity: DEFAULT_MOUSE_SENSITIVITY,
-        acceleration: DEFAULT_MOUSE_ACCELERATION,
-        invertX: DEFAULT_MOUSE_INVERT_X,
-        invertY: DEFAULT_MOUSE_INVERT_Y,
+        sensitivity: DEFAULT_SCROLL_SENSITIVITY,
+        acceleration: DEFAULT_SCROLL_ACCELERATION,
+        invertX: DEFAULT_SCROLL_INVERT_X,
+        invertY: DEFAULT_SCROLL_INVERT_Y,
       }
       setThreshold(values.threshold)
       setSensitivity(values.sensitivity)
       setAcceleration(values.acceleration)
       setInvertX(values.invertX)
       setInvertY(values.invertY)
-      originalMouseMappingRef.current = null
+      originalScrollMappingRef.current = null
     }
-  }, [mouseMapping])
+  }, [scrollMapping])
 
-  // Check for changes
   useEffect(() => {
-    // Check if mapping type changed (mode switch from hotkey to mouse)
-    const mappingTypeChanged = previousMappingType === 'hotkey'
-    
-    if (mouseMapping) {
-      // Compare current values with saved mapping
-      const hasChanges = 
-        Math.abs(threshold - mouseMapping.threshold) > 0.01 ||
-        Math.abs((sensitivity ?? DEFAULT_MOUSE_SENSITIVITY) - (mouseMapping.sensitivity ?? DEFAULT_MOUSE_SENSITIVITY)) > 0.01 ||
-        Math.abs((acceleration ?? DEFAULT_MOUSE_ACCELERATION) - (mouseMapping.acceleration ?? DEFAULT_MOUSE_ACCELERATION)) > 0.01 ||
-        (invertX ?? DEFAULT_MOUSE_INVERT_X) !== (mouseMapping.invertX ?? DEFAULT_MOUSE_INVERT_X) ||
-        (invertY ?? DEFAULT_MOUSE_INVERT_Y) !== (mouseMapping.invertY ?? DEFAULT_MOUSE_INVERT_Y)
+    const mappingTypeChanged = previousMappingType !== null && previousMappingType !== 'scroll'
+
+    if (scrollMapping) {
+      const hasChanges =
+        Math.abs(threshold - scrollMapping.threshold) > 0.01 ||
+        Math.abs((sensitivity ?? DEFAULT_SCROLL_SENSITIVITY) - (scrollMapping.sensitivity ?? DEFAULT_SCROLL_SENSITIVITY)) > 0.01 ||
+        Math.abs((acceleration ?? DEFAULT_SCROLL_ACCELERATION) - (scrollMapping.acceleration ?? DEFAULT_SCROLL_ACCELERATION)) > 0.01 ||
+        (invertX ?? DEFAULT_SCROLL_INVERT_X) !== (scrollMapping.invertX ?? DEFAULT_SCROLL_INVERT_X) ||
+        (invertY ?? DEFAULT_SCROLL_INVERT_Y) !== (scrollMapping.invertY ?? DEFAULT_SCROLL_INVERT_Y)
       setHasUnsavedChanges(hasChanges)
     } else {
-      // New mapping - show buttons if mapping type changed OR if values differ from defaults
-      const valuesDifferFromDefaults = 
+      const valuesDifferFromDefaults =
         Math.abs(threshold - DEFAULT_STICK_THRESHOLD_MOUSE) > 0.01 ||
-        Math.abs((sensitivity ?? DEFAULT_MOUSE_SENSITIVITY) - DEFAULT_MOUSE_SENSITIVITY) > 0.01 ||
-        Math.abs((acceleration ?? DEFAULT_MOUSE_ACCELERATION) - DEFAULT_MOUSE_ACCELERATION) > 0.01 ||
-        (invertX ?? DEFAULT_MOUSE_INVERT_X) !== DEFAULT_MOUSE_INVERT_X ||
-        (invertY ?? DEFAULT_MOUSE_INVERT_Y) !== DEFAULT_MOUSE_INVERT_Y
+        Math.abs((sensitivity ?? DEFAULT_SCROLL_SENSITIVITY) - DEFAULT_SCROLL_SENSITIVITY) > 0.01 ||
+        Math.abs((acceleration ?? DEFAULT_SCROLL_ACCELERATION) - DEFAULT_SCROLL_ACCELERATION) > 0.01 ||
+        (invertX ?? DEFAULT_SCROLL_INVERT_X) !== DEFAULT_SCROLL_INVERT_X ||
+        (invertY ?? DEFAULT_SCROLL_INVERT_Y) !== DEFAULT_SCROLL_INVERT_Y
       setHasUnsavedChanges(mappingTypeChanged || valuesDifferFromDefaults)
     }
-  }, [threshold, sensitivity, acceleration, invertX, invertY, mouseMapping, previousMappingType])
+  }, [threshold, sensitivity, acceleration, invertX, invertY, scrollMapping, previousMappingType])
 
   const revertChanges = useCallback(() => {
-    if (originalMouseMappingRef.current) {
-      setThreshold(originalMouseMappingRef.current.threshold)
-      setSensitivity(originalMouseMappingRef.current.sensitivity)
-      setAcceleration(originalMouseMappingRef.current.acceleration)
-      setInvertX(originalMouseMappingRef.current.invertX)
-      setInvertY(originalMouseMappingRef.current.invertY)
+    if (originalScrollMappingRef.current) {
+      setThreshold(originalScrollMappingRef.current.threshold)
+      setSensitivity(originalScrollMappingRef.current.sensitivity)
+      setAcceleration(originalScrollMappingRef.current.acceleration)
+      setInvertX(originalScrollMappingRef.current.invertX)
+      setInvertY(originalScrollMappingRef.current.invertY)
       setHasUnsavedChanges(false)
     } else {
-      // Revert to defaults for new mapping
       setThreshold(DEFAULT_STICK_THRESHOLD_MOUSE)
-      setSensitivity(DEFAULT_MOUSE_SENSITIVITY)
-      setAcceleration(DEFAULT_MOUSE_ACCELERATION)
-      setInvertX(DEFAULT_MOUSE_INVERT_X)
-      setInvertY(DEFAULT_MOUSE_INVERT_Y)
+      setSensitivity(DEFAULT_SCROLL_SENSITIVITY)
+      setAcceleration(DEFAULT_SCROLL_ACCELERATION)
+      setInvertX(DEFAULT_SCROLL_INVERT_X)
+      setInvertY(DEFAULT_SCROLL_INVERT_Y)
       setHasUnsavedChanges(false)
     }
   }, [])
@@ -137,7 +130,7 @@ export function StickMouseMode({
         <span>{threshold.toFixed(2)}</span>
       </div>
       <div className="threshold-control">
-        <label>Sensitivity:</label>
+        <label>Speed:</label>
         <input
           type="range"
           min="0.1"
@@ -161,7 +154,7 @@ export function StickMouseMode({
         <span>{acceleration.toFixed(2)}</span>
       </div>
       <div className="threshold-control">
-        <label>Invert X:</label>
+        <label>Invert Horizontal:</label>
         <input
           type="checkbox"
           checked={invertX}
@@ -169,20 +162,20 @@ export function StickMouseMode({
         />
       </div>
       <div className="threshold-control">
-        <label>Invert Y:</label>
+        <label>Invert Vertical:</label>
         <input
           type="checkbox"
           checked={invertY}
           onChange={(e) => setInvertY(e.target.checked)}
         />
       </div>
-      
+
       <MappingActions
         hasUnsavedChanges={hasUnsavedChanges}
         onApplyChanges={() => {
-          onSetAxisMapping(stickIndex, 'up', 'Mouse', 'Mouse', threshold, 'mouse', sensitivity, acceleration, invertX, invertY)
+          onSetAxisMapping(stickIndex, 'up', 'Scroll', 'Scroll', threshold, 'scroll', sensitivity, acceleration, invertX, invertY)
           setHasUnsavedChanges(false)
-          originalMouseMappingRef.current = {
+          originalScrollMappingRef.current = {
             threshold,
             sensitivity,
             acceleration,
@@ -192,13 +185,13 @@ export function StickMouseMode({
         }}
         onRevertChanges={revertChanges}
         onRemoveMapping={() => {
-          if (mouseMapping) {
-            onRemoveAxisMapping(stickIndex, mouseMapping.direction)
+          if (scrollMapping) {
+            onRemoveAxisMapping(stickIndex, scrollMapping.direction)
           }
           setHasUnsavedChanges(false)
-          originalMouseMappingRef.current = null
+          originalScrollMappingRef.current = null
         }}
-        showRemove={!!(mouseMapping)}
+        showRemove={!!(scrollMapping)}
       />
     </div>
   )
