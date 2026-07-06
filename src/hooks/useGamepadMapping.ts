@@ -63,6 +63,7 @@ export interface GamepadMapping {
 }
 
 const STORAGE_KEY = "gamepad-mappings";
+const SCROLL_STEPS_PER_SECOND = 60;
 
 export function useGamepadMapping(gamepads: GamepadState[]) {
   const [mappings, setMappings] = useState<GamepadMapping[]>([]);
@@ -376,10 +377,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   const previousAxisStatesRef = useRef<Map<string, boolean>>(new Map());
   // Track pending mouse movements to prevent queuing (which causes drift)
   const pendingMouseMovementsRef = useRef<Set<string>>(new Set());
-  const pendingMouseScrollsRef = useRef<Set<string>>(new Set());
   const scrollRemainderRef = useRef<Map<string, { x: number; y: number }>>(
     new Map()
   );
+  const lastScrollUpdateTimeRef = useRef<Map<string, number>>(new Map());
   // Track when each stick started moving for time-based acceleration
   const stickMovementStartTimeRef = useRef<Map<string, number>>(new Map());
 
@@ -401,8 +402,8 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   };
 
   const sendMouseScroll = useCallback(
-    (deltaX: number, deltaY: number, stateKey: string) => {
-      if (!window.mouseSimulator || pendingMouseScrollsRef.current.has(stateKey)) {
+    (deltaX: number, deltaY: number) => {
+      if (!window.mouseSimulator) {
         return;
       }
 
@@ -412,16 +413,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         return;
       }
 
-      pendingMouseScrollsRef.current.add(stateKey);
-      window.mouseSimulator
-        .scrollMouse(stepsX, stepsY)
-        .then(() => {
-          pendingMouseScrollsRef.current.delete(stateKey);
-        })
-        .catch((err) => {
-          console.error("Error scrolling mouse:", err);
-          pendingMouseScrollsRef.current.delete(stateKey);
-        });
+      void window.mouseSimulator.scrollMouse(stepsX, stepsY).catch((err) => {
+        console.error("Error scrolling mouse:", err);
+      });
     },
     []
   );
@@ -432,7 +426,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       if (!delta) {
         return;
       }
-      sendMouseScroll(delta.deltaX, delta.deltaY, stateKey);
+      sendMouseScroll(delta.deltaX, delta.deltaY);
     },
     [sendMouseScroll]
   );
@@ -749,6 +743,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         if (inDeadzone) {
           stickMovementStartTimeRef.current.delete(scrollStateKey);
           scrollRemainderRef.current.delete(scrollStateKey);
+          lastScrollUpdateTimeRef.current.delete(scrollStateKey);
           return;
         }
 
@@ -757,13 +752,21 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         const acceleration =
           scrollMapping.acceleration ?? DEFAULT_SCROLL_ACCELERATION;
 
-        const now = Date.now();
+        const now = performance.now();
         if (!stickMovementStartTimeRef.current.has(scrollStateKey)) {
           stickMovementStartTimeRef.current.set(scrollStateKey, now);
         }
+        const previousUpdateTime =
+          lastScrollUpdateTimeRef.current.get(scrollStateKey) ??
+          now - 1000 / SCROLL_STEPS_PER_SECOND;
+        lastScrollUpdateTimeRef.current.set(scrollStateKey, now);
         const movementStartTime =
           stickMovementStartTimeRef.current.get(scrollStateKey)!;
         const movementDurationSeconds = (now - movementStartTime) / 1000;
+        const elapsedSeconds = Math.min(
+          Math.max((now - previousUpdateTime) / 1000, 0),
+          0.05
+        );
 
         let normalizedX = 0;
         let normalizedY = 0;
@@ -797,19 +800,26 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         ) {
           stickMovementStartTimeRef.current.delete(scrollStateKey);
           scrollRemainderRef.current.delete(scrollStateKey);
-          return;
-        }
-
-        if (pendingMouseScrollsRef.current.has(scrollStateKey)) {
+          lastScrollUpdateTimeRef.current.delete(scrollStateKey);
           return;
         }
 
         const remainder =
           scrollRemainderRef.current.get(scrollStateKey) ?? { x: 0, y: 0 };
         const nextX =
-          remainder.x + normalizedX * sensitivity * accelerationMultiplier;
+          remainder.x +
+          normalizedX *
+            sensitivity *
+            accelerationMultiplier *
+            elapsedSeconds *
+            SCROLL_STEPS_PER_SECOND;
         const nextY =
-          remainder.y + normalizedY * sensitivity * accelerationMultiplier;
+          remainder.y +
+          normalizedY *
+            sensitivity *
+            accelerationMultiplier *
+            elapsedSeconds *
+            SCROLL_STEPS_PER_SECOND;
         const stepsX = nextX < 0 ? Math.ceil(nextX) : Math.floor(nextX);
         const stepsY = nextY < 0 ? Math.ceil(nextY) : Math.floor(nextY);
 
@@ -818,7 +828,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           y: nextY - stepsY,
         });
 
-        sendMouseScroll(stepsX, stepsY, scrollStateKey);
+        sendMouseScroll(stepsX, stepsY);
       });
 
       // Process hotkey mappings (skip if a continuous mode is enabled for that stick)

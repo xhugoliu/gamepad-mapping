@@ -12,10 +12,14 @@ import {
 } from "electron";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { update } from "./update";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+
+const { libnut } = require("@nut-tree-fork/libnut/dist/import_libnut");
 
 // The built directory structure
 //
@@ -309,18 +313,13 @@ ipcMain.handle("mouse-scroll", async (_event, deltaX: number, deltaY: number) =>
   try {
     const stepsX = Math.trunc(deltaX);
     const stepsY = Math.trunc(deltaY);
-
-    if (stepsY < 0) {
-      await mouse.scrollUp(Math.abs(stepsY));
-    } else if (stepsY > 0) {
-      await mouse.scrollDown(stepsY);
+    if (stepsX === 0 && stepsY === 0) {
+      return { success: true };
     }
 
-    if (stepsX < 0) {
-      await mouse.scrollLeft(Math.abs(stepsX));
-    } else if (stepsX > 0) {
-      await mouse.scrollRight(stepsX);
-    }
+    // libnut uses positive Y for wheel-up, while the renderer uses
+    // positive Y for content-down to match DOM WheelEvent semantics.
+    libnut.scrollMouse(stepsX, -stepsY);
 
     return { success: true };
   } catch (error) {
