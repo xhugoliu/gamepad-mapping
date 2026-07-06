@@ -35,7 +35,8 @@ interface StickMappingPanelProps {
     acceleration?: number,
     invertX?: boolean,
     invertY?: boolean,
-    action?: MappingAction
+    action?: MappingAction,
+    directionGapDegrees?: number
   ) => void;
   onRemoveAxisMapping: (stickIndex: number, direction: StickDirection) => void;
   onSetEditingAxis: (

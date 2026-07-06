@@ -201,7 +201,8 @@ function App() {
                     acceleration,
                     invertX,
                     invertY,
-                    action
+                    action,
+                    directionGapDegrees
                   ) =>
                     setAxisMapping(
                       selectedGamepad.index,
@@ -216,7 +217,8 @@ function App() {
                       invertX,
                       invertY,
                       action,
-                      selectedLayerIndex
+                      selectedLayerIndex,
+                      directionGapDegrees
                     )
                   }
                   onSetDpadMapping={(direction, key, label, action) =>

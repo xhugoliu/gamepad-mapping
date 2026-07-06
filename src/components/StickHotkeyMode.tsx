@@ -5,7 +5,12 @@ import { MappingActions } from './MappingPanel'
 import { MappingActionSelector } from './MappingActionSelector'
 import { getStickDirection, getStickAxes } from '../utils/stickDirection'
 import { DIRECTION_LABELS, STICK_DIRECTIONS } from '../constants/directionLabels'
-import { DEFAULT_STICK_THRESHOLD, DEFAULT_STICK_THRESHOLD_PREVIEW } from '../constants/defaults'
+import {
+  DEFAULT_STICK_DIRECTION_GAP_DEGREES,
+  DEFAULT_STICK_THRESHOLD,
+  DEFAULT_STICK_THRESHOLD_PREVIEW,
+  MAX_STICK_DIRECTION_GAP_DEGREES,
+} from '../constants/defaults'
 import { MappingAction, MappingActionAssignment } from '../types/mappingAction'
 import './MappingPanel.css'
 
@@ -14,7 +19,7 @@ interface StickHotkeyModeProps {
   mapping?: GamepadMapping
   stickIndex: number
   editingAxis: { gamepadIndex: number; stickIndex: number; direction: StickDirection } | null
-  onSetAxisMapping: (stickIndex: number, direction: StickDirection, key: string, label: string, threshold: number, type?: StickMappingType, sensitivity?: number, acceleration?: number, invertX?: boolean, invertY?: boolean, action?: MappingAction) => void
+  onSetAxisMapping: (stickIndex: number, direction: StickDirection, key: string, label: string, threshold: number, type?: StickMappingType, sensitivity?: number, acceleration?: number, invertX?: boolean, invertY?: boolean, action?: MappingAction, directionGapDegrees?: number) => void
   onRemoveAxisMapping: (stickIndex: number, direction: StickDirection) => void
   onSetEditingAxis: (value: { gamepadIndex: number; stickIndex: number; direction: StickDirection } | null) => void
   onRemoveAllMappings: (stickIndex: number) => void
@@ -31,10 +36,14 @@ export function StickHotkeyMode({
   onRemoveAllMappings,
 }: StickHotkeyModeProps) {
   const [threshold, setThreshold] = useState(DEFAULT_STICK_THRESHOLD)
+  const [directionGapDegrees, setDirectionGapDegrees] = useState(
+    DEFAULT_STICK_DIRECTION_GAP_DEGREES
+  )
   const [pendingDirectionActions, setPendingDirectionActions] = useState<Map<StickDirection, MappingActionAssignment>>(new Map())
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const originalDirectionMappingsRef = useRef<Map<StickDirection, MappingActionAssignment>>(new Map())
   const originalThresholdRef = useRef<number>(DEFAULT_STICK_THRESHOLD)
+  const originalDirectionGapRef = useRef<number>(DEFAULT_STICK_DIRECTION_GAP_DEGREES)
 
   const stickMappings = mapping?.axisMappings.filter(m => m.stickIndex === stickIndex && m.type === 'hotkey') || []
 
@@ -42,42 +51,58 @@ export function StickHotkeyMode({
     return mapping?.axisMappings.find(m => m.stickIndex === stickIndex && m.direction === direction)
   }, [mapping?.axisMappings, stickIndex])
 
-  // Initialize threshold from existing mappings (use first one found)
+  // Initialize shared hotkey settings from existing mappings (use first one found)
   useEffect(() => {
-    if (stickMappings.length > 0) {
-      const firstMapping = stickMappings[0]
+    const savedStickMappings = mapping?.axisMappings.filter(m => m.stickIndex === stickIndex && m.type === 'hotkey') || []
+
+    if (savedStickMappings.length > 0) {
+      const firstMapping = savedStickMappings[0]
       setThreshold(firstMapping.threshold)
       originalThresholdRef.current = firstMapping.threshold
+      const nextDirectionGap =
+        firstMapping.directionGapDegrees ?? DEFAULT_STICK_DIRECTION_GAP_DEGREES
+      setDirectionGapDegrees(nextDirectionGap)
+      originalDirectionGapRef.current = nextDirectionGap
+      return
     }
-  }, [stickMappings.length]) // Only run when mappings are first loaded
+
+    setThreshold(DEFAULT_STICK_THRESHOLD)
+    originalThresholdRef.current = DEFAULT_STICK_THRESHOLD
+    setDirectionGapDegrees(DEFAULT_STICK_DIRECTION_GAP_DEGREES)
+    originalDirectionGapRef.current = DEFAULT_STICK_DIRECTION_GAP_DEGREES
+  }, [mapping?.axisMappings, stickIndex])
 
   const getCurrentStickDirection = (stickIndex: number): StickDirection | null => {
     const { axisXIndex, axisYIndex } = getStickAxes(stickIndex)
     return getStickDirection(
       gamepad.axes[axisXIndex] || 0,
       gamepad.axes[axisYIndex] || 0,
-      DEFAULT_STICK_THRESHOLD_PREVIEW
+      DEFAULT_STICK_THRESHOLD_PREVIEW,
+      directionGapDegrees
     )
   }
 
   // Initialize original mappings
   useEffect(() => {
+    const savedStickMappings = mapping?.axisMappings.filter(m => m.stickIndex === stickIndex && m.type === 'hotkey') || []
+
     originalDirectionMappingsRef.current = new Map()
-    stickMappings.forEach(m => {
+    savedStickMappings.forEach(m => {
       originalDirectionMappingsRef.current.set(m.direction, {
         key: m.key,
         label: m.label,
         action: m.action
       })
     })
-  }, [stickMappings])
+  }, [mapping?.axisMappings, stickIndex])
 
   // Check for changes
   useEffect(() => {
     const hasPendingKeys = pendingDirectionActions.size > 0
     const hasThresholdChanges = Math.abs(threshold - originalThresholdRef.current) > 0.01
-    setHasUnsavedChanges(hasPendingKeys || hasThresholdChanges)
-  }, [pendingDirectionActions, threshold])
+    const hasDirectionGapChanges = Math.abs(directionGapDegrees - originalDirectionGapRef.current) > 0.01
+    setHasUnsavedChanges(hasPendingKeys || hasThresholdChanges || hasDirectionGapChanges)
+  }, [directionGapDegrees, pendingDirectionActions, threshold])
 
   const handleActionChange = useCallback((direction: StickDirection, assignment: MappingActionAssignment) => {
     const stickMapping = getStickMapping(direction)
@@ -103,6 +128,7 @@ export function StickHotkeyMode({
   const revertChanges = useCallback(() => {
     setPendingDirectionActions(new Map())
     setThreshold(originalThresholdRef.current)
+    setDirectionGapDegrees(originalDirectionGapRef.current)
     setHasUnsavedChanges(false)
   }, [])
 
@@ -176,24 +202,45 @@ export function StickHotkeyMode({
         />
         <span>{threshold.toFixed(2)}</span>
       </div>
+
+      <div className="threshold-control">
+        <label>Angle gap between directions:</label>
+        <input
+          type="range"
+          min="0"
+          max={MAX_STICK_DIRECTION_GAP_DEGREES}
+          step="1"
+          value={directionGapDegrees}
+          onChange={(e) => {
+            const nextDirectionGap = Number(e.target.value)
+            setDirectionGapDegrees(nextDirectionGap)
+            setHasUnsavedChanges(true)
+          }}
+        />
+        <span>{directionGapDegrees.toFixed(0)} deg</span>
+      </div>
       
       <MappingActions
         hasUnsavedChanges={hasUnsavedChanges}
         onApplyChanges={() => {
-          // Apply all pending direction mappings with global threshold
+          // Apply all pending direction mappings with shared hotkey settings
           pendingDirectionActions.forEach((pending, direction) => {
-            onSetAxisMapping(stickIndex, direction, pending.key, pending.label, threshold, 'hotkey', 1.0, 1.0, false, false, pending.action)
+            onSetAxisMapping(stickIndex, direction, pending.key, pending.label, threshold, 'hotkey', 1.0, 1.0, false, false, pending.action, directionGapDegrees)
           })
-          // Update threshold for all existing mappings if it changed
-          if (Math.abs(threshold - originalThresholdRef.current) > 0.01) {
+          // Update shared hotkey settings for all existing mappings if changed
+          if (
+            Math.abs(threshold - originalThresholdRef.current) > 0.01 ||
+            Math.abs(directionGapDegrees - originalDirectionGapRef.current) > 0.01
+          ) {
             stickMappings.forEach(m => {
-              onSetAxisMapping(stickIndex, m.direction, m.key, m.label, threshold, 'hotkey', 1.0, 1.0, false, false, m.action)
+              onSetAxisMapping(stickIndex, m.direction, m.key, m.label, threshold, 'hotkey', 1.0, 1.0, false, false, m.action, directionGapDegrees)
             })
           }
           // Clear pending changes
           setPendingDirectionActions(new Map())
           setHasUnsavedChanges(false)
           originalThresholdRef.current = threshold
+          originalDirectionGapRef.current = directionGapDegrees
           originalDirectionMappingsRef.current.clear()
           if (editingAxis) {
             onSetEditingAxis(null)

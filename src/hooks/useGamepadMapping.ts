@@ -15,6 +15,7 @@ import {
   DEFAULT_SCROLL_INVERT_X,
   DEFAULT_SCROLL_INVERT_Y,
   DEFAULT_SCROLL_SENSITIVITY,
+  DEFAULT_STICK_DIRECTION_GAP_DEGREES,
   DEFAULT_STICK_MAPPING_TYPE,
 } from "../constants/defaults";
 import {
@@ -50,6 +51,7 @@ export interface AxisMapping {
   label: string;
   action?: MappingAction;
   threshold: number;
+  directionGapDegrees?: number; // For hotkey mode angular gap between adjacent directions
   type: StickMappingType; // 'hotkey' for 8 directions, 'mouse' for mouse control, 'scroll' for wheel control
   sensitivity?: number; // For mouse/scroll control (0.1 - 10.0)
   acceleration?: number; // For mouse/scroll control (0.0 - 2.0)
@@ -509,7 +511,8 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       invertX: boolean = DEFAULT_MOUSE_INVERT_X,
       invertY: boolean = DEFAULT_MOUSE_INVERT_Y,
       action: MappingAction = createInputAction(key, label),
-      layerIndex: number = BASE_LAYER_INDEX
+      layerIndex: number = BASE_LAYER_INDEX,
+      directionGapDegrees: number = DEFAULT_STICK_DIRECTION_GAP_DEGREES
     ) => {
       setMappings((prev) => {
         const updated = [...prev];
@@ -539,6 +542,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             existingContinuousMapping.label = label;
             existingContinuousMapping.action = action;
             existingContinuousMapping.threshold = threshold;
+            existingContinuousMapping.directionGapDegrees = undefined;
             existingContinuousMapping.sensitivity = sensitivity;
             existingContinuousMapping.acceleration = acceleration;
             existingContinuousMapping.invertX = invertX;
@@ -555,6 +559,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
               label: type === "mouse" ? "Mouse" : "Scroll",
               action,
               threshold,
+              directionGapDegrees: undefined,
               type,
               sensitivity,
               acceleration,
@@ -575,6 +580,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             existingAxisMapping.label = label;
             existingAxisMapping.action = action;
             existingAxisMapping.threshold = threshold;
+            existingAxisMapping.directionGapDegrees = directionGapDegrees;
           } else {
             // Remove continuous mapping if exists when adding hotkey mapping
             layer.axisMappings = layer.axisMappings.filter(
@@ -587,6 +593,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
               label,
               action,
               threshold,
+              directionGapDegrees,
               type: "hotkey",
             });
           }
@@ -1516,7 +1523,8 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           const detectedDirection = getStickDirection(
             stickX,
             stickY,
-            axisMapping.threshold
+            axisMapping.threshold,
+            axisMapping.directionGapDegrees
           );
           let isActive = false;
 

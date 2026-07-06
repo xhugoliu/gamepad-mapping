@@ -34,7 +34,8 @@ interface MappingPanelProps {
     acceleration?: number,
     invertX?: boolean,
     invertY?: boolean,
-    action?: MappingAction
+    action?: MappingAction,
+    directionGapDegrees?: number
   ) => void;
   onSetDpadMapping: (
     direction: StickDirection,
