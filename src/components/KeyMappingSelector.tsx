@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createKeyboardShortcut } from '../utils/keyboardShortcut'
 import './MappingPanel.css'
 
 interface KeyMappingSelectorProps {
@@ -23,38 +24,14 @@ export function KeyMappingSelector({
   // Handle key press and mouse button clicks
   useEffect(() => {
 
-    const sortComboKeys = (keys: string[]): string[] => {
-      const modifierPriority: Record<string, number> = {
-        Ctrl: 1,
-        Alt: 2,
-        Shift: 3,
-        Meta: 4,
-      };
-      return keys.sort((a, b) => {
-        const aPriority = modifierPriority[a] || 100;
-        const bPriority = modifierPriority[b] || 100;
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority;
-        }
-        return a.localeCompare(b);
-      });
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isEditing) {
         e.preventDefault()
 
-        const arr = [];
-        let ekey = e.key === ' ' ? 'Space' : e.key
-        arr.push(ekey);
-        if (e.key !== "Alt" && e.altKey) arr.push("Alt");
-        if (e.key !== "Shift" && e.shiftKey) arr.push("Shift");
-        if (e.key !== "Meta" && e.metaKey) arr.push("Meta");
-        if (e.key !== "Ctrl" && e.ctrlKey) arr.push("Ctrl");
-
-        const key = sortComboKeys(arr).join("+");
-
-        onKeyPress(key, key.toUpperCase());
+        const shortcut = createKeyboardShortcut(e)
+        if (shortcut) {
+          onKeyPress(shortcut.key, shortcut.label)
+        }
       }
     }
 

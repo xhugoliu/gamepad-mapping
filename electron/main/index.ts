@@ -1,4 +1,4 @@
-import { Button, Key, keyboard, mouse } from "@nut-tree-fork/nut-js";
+import { Button, keyboard, mouse } from "@nut-tree-fork/nut-js";
 import {
   app,
   BrowserWindow,
@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { getNutKeysForShortcut } from "./keyShortcut";
 import { update } from "./update";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -125,123 +126,8 @@ app.on("activate", () => {
   }
 });
 
-// Key mapping for nut-js - special keys
-const keyMap: Record<string, Key> = {
-  Meta: process.platform === "darwin" ? Key.LeftSuper : Key.LeftSuper,
-  Space: Key.Space,
-  Enter: Key.Enter,
-  Escape: Key.Escape,
-  Backspace: Key.Backspace,
-  Tab: Key.Tab,
-  Delete: Key.Delete,
-  ArrowUp: Key.Up,
-  ArrowDown: Key.Down,
-  ArrowLeft: Key.Left,
-  ArrowRight: Key.Right,
-  Home: Key.Home,
-  End: Key.End,
-  PageUp: Key.PageUp,
-  PageDown: Key.PageDown,
-  Insert: Key.Insert,
-  F1: Key.F1,
-  F2: Key.F2,
-  F3: Key.F3,
-  F4: Key.F4,
-  F5: Key.F5,
-  F6: Key.F6,
-  F7: Key.F7,
-  F8: Key.F8,
-  F9: Key.F9,
-  F10: Key.F10,
-  F11: Key.F11,
-  F12: Key.F12,
-  Shift: Key.LeftShift,
-  Control: Key.LeftControl,
-  Alt: Key.LeftAlt,
-};
-
-// Mapping for single character keys to Key enum
-const charKeyMap: Record<string, Key> = {
-  a: Key.A,
-  b: Key.B,
-  c: Key.C,
-  d: Key.D,
-  e: Key.E,
-  f: Key.F,
-  g: Key.G,
-  h: Key.H,
-  i: Key.I,
-  j: Key.J,
-  k: Key.K,
-  l: Key.L,
-  m: Key.M,
-  n: Key.N,
-  o: Key.O,
-  p: Key.P,
-  q: Key.Q,
-  r: Key.R,
-  s: Key.S,
-  t: Key.T,
-  u: Key.U,
-  v: Key.V,
-  w: Key.W,
-  x: Key.X,
-  y: Key.Y,
-  z: Key.Z,
-  "0": Key.Num0,
-  "1": Key.Num1,
-  "2": Key.Num2,
-  "3": Key.Num3,
-  "4": Key.Num4,
-  "5": Key.Num5,
-  "6": Key.Num6,
-  "7": Key.Num7,
-  "8": Key.Num8,
-  "9": Key.Num9,
-  "-": Key.Minus,
-  "=": Key.Equal,
-  "[": Key.LeftBracket,
-  "]": Key.RightBracket,
-  "\\": Key.Backslash,
-  ";": Key.Semicolon,
-  "'": Key.Quote,
-  ",": Key.Comma,
-  ".": Key.Period,
-  "/": Key.Slash,
-  "`": Key.Grave,
-};
 keyboard.config.autoDelayMs = 0;
 mouse.config.autoDelayMs = 0;
-
-// Convert key name to nut-js Key enum
-function getNutKey(key: string): Key | null {
-  // Check if it's a special key
-  if (keyMap[key] !== undefined) {
-    return keyMap[key];
-  }
-  // Single character keys
-  if (key.length === 1) {
-    const lowerKey = key.toLowerCase();
-    if (charKeyMap[lowerKey]) {
-      return charKeyMap[lowerKey];
-    }
-  }
-  return null;
-}
-
-// Check if a key is a modifier key
-function isModifierKey(key: Key): boolean {
-  return (
-    key === Key.LeftShift ||
-    key === Key.RightShift ||
-    key === Key.LeftControl ||
-    key === Key.RightControl ||
-    key === Key.LeftAlt ||
-    key === Key.RightAlt ||
-    key === Key.LeftSuper ||
-    key === Key.RightSuper
-  );
-}
 
 // Handle mouse movement requests
 ipcMain.handle("mouse-move", async (_event, deltaX: number, deltaY: number) => {
@@ -331,36 +217,19 @@ ipcMain.handle("mouse-scroll", async (_event, deltaX: number, deltaY: number) =>
 // Handle key toggle requests
 ipcMain.handle("key-toggle", async (_event, key: string, down: boolean) => {
   try {
-    if (key.includes("+")) {
-      const keys = key.split("+");
-      const nutKeys = keys.map((key) => getNutKey(key)).filter((key) => key !== null);
-
-      if (nutKeys.length == 0) {
-        console.warn(`Unsupported key combo: ${key}`);
-        return { success: false, error: `Unsupported key combo: ${key}` };
-      }
-
-      if (down) {
-        await keyboard.pressKey(...nutKeys);
-      } else {
-        await keyboard.releaseKey(...nutKeys);
-      }
-
-      return { success: true };
-    } else {
-      const nutKey = getNutKey(key);
-      if (nutKey !== null) {
-        if (down) {
-          await keyboard.pressKey(nutKey);
-        } else {
-          await keyboard.releaseKey(nutKey);
-        }
-      } else {
-        console.warn(`Unknown key: ${key}`);
-        return { success: false, error: `Unknown key: ${key}` };
-      }
-      return { success: true };
+    const nutKeys = getNutKeysForShortcut(key);
+    if (!nutKeys) {
+      console.warn(`Unsupported key: ${key}`);
+      return { success: false, error: `Unsupported key: ${key}` };
     }
+
+    if (down) {
+      await keyboard.pressKey(...nutKeys);
+    } else {
+      await keyboard.releaseKey(...nutKeys);
+    }
+
+    return { success: true };
   } catch (error) {
     console.error("Error simulating key:", error);
     return { success: false, error: String(error) };
