@@ -6,6 +6,13 @@ import {
   getStickAxes,
 } from "../utils/stickDirection";
 import {
+  getComboInputStateKey,
+  getComboStateKey,
+  isComboInputPressed,
+  isComboReady,
+  normalizeComboTermMs,
+} from "../utils/comboMapping";
+import {
   DEFAULT_STICK_THRESHOLD,
   DEFAULT_MOUSE_SENSITIVITY,
   DEFAULT_MOUSE_ACCELERATION,
@@ -66,12 +73,39 @@ export interface DpadMapping {
   action?: MappingAction;
 }
 
+export type ComboInput =
+  | {
+      type: "button";
+      buttonIndex: number;
+    }
+  | {
+      type: "dpad";
+      direction: StickDirection;
+    }
+  | {
+      type: "axis";
+      stickIndex: number;
+      direction: StickDirection;
+      threshold?: number;
+      directionGapDegrees?: number;
+    };
+
+export interface ComboMapping {
+  id: string;
+  inputs: ComboInput[];
+  key: string;
+  label: string;
+  action?: MappingAction;
+  termMs: number;
+}
+
 export interface GamepadLayerMapping {
   layerIndex: number;
   name: string;
   buttonMappings: ButtonMapping[];
   axisMappings: AxisMapping[];
   dpadMappings: DpadMapping[];
+  comboMappings: ComboMapping[];
 }
 
 export interface GamepadMapping {
@@ -79,6 +113,7 @@ export interface GamepadMapping {
   buttonMappings: ButtonMapping[];
   axisMappings: AxisMapping[];
   dpadMappings?: DpadMapping[];
+  comboMappings?: ComboMapping[];
   layers?: GamepadLayerMapping[];
 }
 
@@ -93,13 +128,15 @@ const createLayerMapping = (
   layerIndex: number,
   buttonMappings: ButtonMapping[] = [],
   axisMappings: AxisMapping[] = [],
-  dpadMappings: DpadMapping[] = []
+  dpadMappings: DpadMapping[] = [],
+  comboMappings: ComboMapping[] = []
 ): GamepadLayerMapping => ({
   layerIndex,
   name: getLayerName(layerIndex),
   buttonMappings,
   axisMappings,
   dpadMappings,
+  comboMappings,
 });
 
 const normalizeLayerIndex = (layerIndex: number) =>
@@ -117,6 +154,7 @@ const syncLegacyBaseLayer = (mapping: GamepadMapping) => {
   mapping.buttonMappings = baseLayer.buttonMappings;
   mapping.axisMappings = baseLayer.axisMappings;
   mapping.dpadMappings = baseLayer.dpadMappings;
+  mapping.comboMappings = baseLayer.comboMappings;
 };
 
 const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
@@ -130,6 +168,11 @@ const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
       buttonMappings: layer.buttonMappings ?? [],
       axisMappings: layer.axisMappings ?? [],
       dpadMappings: layer.dpadMappings ?? [],
+      comboMappings: (layer.comboMappings ?? []).map((comboMapping) => ({
+        ...comboMapping,
+        inputs: comboMapping.inputs ?? [],
+        termMs: normalizeComboTermMs(comboMapping.termMs),
+      })),
     });
   });
 
@@ -140,7 +183,8 @@ const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
         BASE_LAYER_INDEX,
         mapping.buttonMappings ?? [],
         mapping.axisMappings ?? [],
-        mapping.dpadMappings ?? []
+        mapping.dpadMappings ?? [],
+        mapping.comboMappings ?? []
       )
     );
   }
@@ -157,6 +201,7 @@ const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
     buttonMappings: baseLayer.buttonMappings,
     axisMappings: baseLayer.axisMappings,
     dpadMappings: baseLayer.dpadMappings,
+    comboMappings: baseLayer.comboMappings,
     layers,
   };
 };
@@ -201,7 +246,8 @@ const getTopActiveLayerMapping = (
             BASE_LAYER_INDEX,
             mapping.buttonMappings ?? [],
             mapping.axisMappings ?? [],
-            mapping.dpadMappings ?? []
+            mapping.dpadMappings ?? [],
+            mapping.comboMappings ?? []
           ),
         ];
   const layersByIndex = new Map(
@@ -237,6 +283,13 @@ const getEffectiveAxisMappings = (
   activeLayerIndices: number[]
 ) => {
   return getTopActiveLayerMapping(mapping, activeLayerIndices)?.axisMappings ?? [];
+};
+
+const getEffectiveComboMappings = (
+  mapping: GamepadMapping,
+  activeLayerIndices: number[]
+) => {
+  return getTopActiveLayerMapping(mapping, activeLayerIndices)?.comboMappings ?? [];
 };
 
 const areSameMappingActions = (
@@ -310,6 +363,7 @@ interface EffectiveMappingsSnapshot {
   activeLayerKey: string;
   buttonMappings: ButtonMapping[];
   dpadMappings: DpadMapping[];
+  comboMappings: ComboMapping[];
   mouseMappings: AxisMapping[];
   scrollMappings: AxisMapping[];
   hotkeyMappingsByStick: Array<[number, AxisMapping[]]>;
@@ -424,6 +478,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         buttonMappings: selectedLayer.buttonMappings,
         axisMappings: selectedLayer.axisMappings,
         dpadMappings: selectedLayer.dpadMappings,
+        comboMappings: selectedLayer.comboMappings,
       };
     },
     [getMapping]
@@ -740,6 +795,82 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     []
   );
 
+  const setComboMapping = useCallback(
+    (
+      gamepadIndex: number,
+      comboMapping: ComboMapping,
+      layerIndex: number = BASE_LAYER_INDEX
+    ) => {
+      setMappings((prev) => {
+        const updated = [...prev];
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        let mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : createGamepadMapping(gamepadIndex);
+
+        if (mappingIndex < 0) {
+          updated.push(mapping);
+        } else {
+          updated[mappingIndex] = mapping;
+        }
+
+        const layer = getOrCreateLayerMapping(mapping, layerIndex);
+        const normalizedComboMapping = {
+          ...comboMapping,
+          inputs: comboMapping.inputs,
+          termMs: normalizeComboTermMs(comboMapping.termMs),
+        };
+        const existingComboIndex = layer.comboMappings.findIndex(
+          (candidate) => candidate.id === comboMapping.id
+        );
+
+        if (existingComboIndex >= 0) {
+          layer.comboMappings[existingComboIndex] = normalizedComboMapping;
+        } else {
+          layer.comboMappings.push(normalizedComboMapping);
+        }
+        syncLegacyBaseLayer(mapping);
+
+        return updated;
+      });
+    },
+    []
+  );
+
+  const removeComboMapping = useCallback(
+    (
+      gamepadIndex: number,
+      comboId: string,
+      layerIndex: number = BASE_LAYER_INDEX
+    ) => {
+      setMappings((prev) => {
+        const updated = [...prev];
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        const mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : undefined;
+
+        if (mapping) {
+          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          layer.comboMappings = layer.comboMappings.filter(
+            (comboMapping) => comboMapping.id !== comboId
+          );
+          syncLegacyBaseLayer(mapping);
+          updated[mappingIndex] = mapping;
+        }
+
+        return updated;
+      });
+    },
+    []
+  );
+
   // Helper function to get fallback cardinal directions for diagonal directions
   const getFallbackDirections = useCallback(
     (direction: StickDirection): StickDirection[] => {
@@ -782,6 +913,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   const defaultLayerRef = useRef<Map<number, number>>(new Map());
   const activeLayersRef = useRef<Map<number, number[]>>(new Map());
   const activeActionsRef = useRef<Map<string, MappingAction>>(new Map());
+  const comboInputPressedAtRef = useRef<Map<string, number>>(new Map());
+  const activeComboStateKeysRef = useRef<Set<string>>(new Set());
+  const activeComboInputsRef = useRef<Map<string, ComboInput[]>>(new Map());
   const effectiveMappingsCacheRef = useRef<
     Map<number, EffectiveMappingsSnapshot>
   >(new Map());
@@ -898,6 +1032,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         activeLayerKey,
         buttonMappings: getEffectiveButtonMappings(mapping, activeLayerIndices),
         dpadMappings: getEffectiveDpadMappings(mapping, activeLayerIndices),
+        comboMappings: getEffectiveComboMappings(mapping, activeLayerIndices),
         mouseMappings: Array.from(mouseMappingsByStick.values()),
         scrollMappings: Array.from(scrollMappingsByStick.values()),
         hotkeyMappingsByStick: Array.from(hotkeyMappingsByStick.entries()),
@@ -1158,6 +1293,112 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     [pressMappedAction, releaseMappedAction]
   );
 
+  const clearActiveComboState = useCallback((comboStateKey: string) => {
+    const comboInputs = activeComboInputsRef.current.get(comboStateKey);
+    comboInputs?.forEach((input) => {
+      const stateKeyPrefix = comboStateKey.slice(
+        0,
+        comboStateKey.indexOf("-combo-")
+      );
+      const gamepadIndex = Number(
+        stateKeyPrefix.slice("gamepad-".length)
+      );
+      if (Number.isFinite(gamepadIndex)) {
+        comboInputPressedAtRef.current.delete(
+          getComboInputStateKey(gamepadIndex, input)
+        );
+      }
+    });
+    activeComboStateKeysRef.current.delete(comboStateKey);
+    activeComboInputsRef.current.delete(comboStateKey);
+  }, []);
+
+  const releaseSuppressedAction = useCallback(
+    (stateKey: string, gamepadIndex: number) => {
+      const activeAction = activeActionsRef.current.get(stateKey);
+      if (!activeAction) {
+        return;
+      }
+
+      releaseMappedAction(activeAction, stateKey, gamepadIndex);
+      activeActionsRef.current.delete(stateKey);
+    },
+    [releaseMappedAction]
+  );
+
+  const processComboMappings = useCallback(
+    (
+      gamepad: GamepadState,
+      comboMappings: ComboMapping[],
+      seenStateKeys: Set<string>
+    ) => {
+      const suppressedStateKeys = new Set<string>();
+      if (comboMappings.length === 0) {
+        return suppressedStateKeys;
+      }
+
+      const now = performance.now();
+      const sortedComboMappings = [...comboMappings].sort((a, b) => {
+        if (b.inputs.length !== a.inputs.length) {
+          return b.inputs.length - a.inputs.length;
+        }
+
+        return a.id.localeCompare(b.id);
+      });
+
+      sortedComboMappings.forEach((comboMapping) => {
+        const comboStateKey = getComboStateKey(gamepad.index, comboMapping.id);
+        seenStateKeys.add(comboStateKey);
+
+        const inputStateKeys = comboMapping.inputs.map((input) => {
+          const stateKey = getComboInputStateKey(gamepad.index, input);
+          const pressed = isComboInputPressed(gamepad, input);
+
+          if (pressed) {
+            if (!comboInputPressedAtRef.current.has(stateKey)) {
+              comboInputPressedAtRef.current.set(stateKey, now);
+            }
+          } else {
+            comboInputPressedAtRef.current.delete(stateKey);
+          }
+
+          return stateKey;
+        });
+        const uniqueInputStateKeys = Array.from(new Set(inputStateKeys));
+        const hasEnoughInputs = uniqueInputStateKeys.length >= 2;
+        const hasOverlappingActiveCombo = uniqueInputStateKeys.some((stateKey) =>
+          suppressedStateKeys.has(stateKey)
+        );
+        const wasActive = activeComboStateKeysRef.current.has(comboStateKey);
+        const isActive =
+          hasEnoughInputs &&
+          !hasOverlappingActiveCombo &&
+          isComboReady(
+            uniqueInputStateKeys,
+            comboInputPressedAtRef.current,
+            comboMapping.termMs,
+            wasActive
+          );
+
+        if (isActive) {
+          activeComboStateKeysRef.current.add(comboStateKey);
+          activeComboInputsRef.current.set(comboStateKey, comboMapping.inputs);
+          uniqueInputStateKeys.forEach((stateKey) => {
+            suppressedStateKeys.add(stateKey);
+            releaseSuppressedAction(stateKey, gamepad.index);
+          });
+        } else {
+          clearActiveComboState(comboStateKey);
+        }
+
+        triggerMappedAction(comboMapping, isActive, comboStateKey, gamepad.index);
+      });
+
+      return suppressedStateKeys;
+    },
+    [clearActiveComboState, releaseSuppressedAction, triggerMappedAction]
+  );
+
   const releaseInactiveActionsForGamepad = useCallback(
     (gamepadIndex: number, seenStateKeys: Set<string>) => {
       const stateKeyPrefix = `gamepad-${gamepadIndex}-`;
@@ -1168,20 +1409,47 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         ) {
           releaseMappedAction(action, stateKey, gamepadIndex);
           activeActionsRef.current.delete(stateKey);
+          if (stateKey.includes("-combo-")) {
+            clearActiveComboState(stateKey);
+          }
         }
       });
     },
-    [releaseMappedAction]
+    [clearActiveComboState, releaseMappedAction]
   );
 
   const reconcileActiveLayerActionHoldersForGamepad = useCallback(
     (gamepad: GamepadState, seenStateKeys: Set<string>) => {
       const preservedStateKeys = new Set<string>();
+      const suppressedStateKeys = new Set<string>();
       const stateKeyPrefix = `gamepad-${gamepad.index}-`;
 
       Array.from(activeActionsRef.current.entries()).forEach(
         ([stateKey, action]) => {
           if (!stateKey.startsWith(stateKeyPrefix) || action.type !== "layer") {
+            return;
+          }
+
+          if (stateKey.includes("-combo-")) {
+            const comboInputs = activeComboInputsRef.current.get(stateKey);
+            const comboStillPressed =
+              !!comboInputs &&
+              comboInputs.every((input) => isComboInputPressed(gamepad, input));
+
+            if (comboStillPressed) {
+              seenStateKeys.add(stateKey);
+              preservedStateKeys.add(stateKey);
+              comboInputs.forEach((input) => {
+                suppressedStateKeys.add(
+                  getComboInputStateKey(gamepad.index, input)
+                );
+              });
+              return;
+            }
+
+            releaseMappedAction(action, stateKey, gamepad.index);
+            activeActionsRef.current.delete(stateKey);
+            clearActiveComboState(stateKey);
             return;
           }
 
@@ -1196,9 +1464,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         }
       );
 
-      return preservedStateKeys;
+      return { preservedStateKeys, suppressedStateKeys };
     },
-    [releaseMappedAction]
+    [clearActiveComboState, releaseMappedAction]
   );
 
   useEffect(() => {
@@ -1209,7 +1477,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   const processGamepadMappings = useCallback(() => {
     gamepadsRef.current.forEach((gamepad) => {
       const seenStateKeys = new Set<string>();
-      const preservedLayerActionStateKeys =
+      const {
+        preservedStateKeys: preservedLayerActionStateKeys,
+        suppressedStateKeys: preservedComboInputStateKeys,
+      } =
         reconcileActiveLayerActionHoldersForGamepad(gamepad, seenStateKeys);
       const mapping = getMapping(gamepad.index);
       if (!mapping) {
@@ -1226,10 +1497,19 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       const {
         buttonMappings,
         dpadMappings,
+        comboMappings,
         mouseMappings,
         scrollMappings,
         hotkeyMappingsByStick,
       } = effectiveMappings;
+      const suppressedStateKeys = processComboMappings(
+        gamepad,
+        comboMappings,
+        seenStateKeys
+      );
+      preservedComboInputStateKeys.forEach((stateKey) => {
+        suppressedStateKeys.add(stateKey);
+      });
 
       // Check button mappings
       buttonMappings.forEach((btnMapping) => {
@@ -1241,6 +1521,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           }
 
           seenStateKeys.add(stateKey);
+          if (suppressedStateKeys.has(stateKey)) {
+            return;
+          }
           triggerMappedAction(
             btnMapping,
             button.pressed,
@@ -1267,6 +1550,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           }
 
           seenStateKeys.add(stateKey);
+          if (suppressedStateKeys.has(stateKey)) {
+            return;
+          }
           let isActive = false;
 
           if (currentDirection === dpadMapping.direction) {
@@ -1520,6 +1806,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           }
 
           seenStateKeys.add(stateKey);
+          if (suppressedStateKeys.has(stateKey)) {
+            return;
+          }
           const detectedDirection = getStickDirection(
             stickX,
             stickY,
@@ -1551,6 +1840,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     getEffectiveMappingsSnapshot,
     getFallbackDirections,
     getMapping,
+    processComboMappings,
     reconcileActiveLayerActionHoldersForGamepad,
     releaseInactiveActionsForGamepad,
     sendMouseScroll,
@@ -1571,9 +1861,11 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     setButtonMapping,
     setAxisMapping,
     setDpadMapping,
+    setComboMapping,
     removeButtonMapping,
     removeAxisMapping,
     removeDpadMapping,
+    removeComboMapping,
     editingButton,
     setEditingButton,
     editingAxis,

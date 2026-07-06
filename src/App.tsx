@@ -19,9 +19,11 @@ function App() {
     setButtonMapping,
     setAxisMapping,
     setDpadMapping,
+    setComboMapping,
     removeButtonMapping,
     removeAxisMapping,
     removeDpadMapping,
+    removeComboMapping,
     editingButton,
     setEditingButton,
     editingAxis,
@@ -231,6 +233,13 @@ function App() {
                       selectedLayerIndex
                     )
                   }
+                  onSetComboMapping={(comboMapping) =>
+                    setComboMapping(
+                      selectedGamepad.index,
+                      comboMapping,
+                      selectedLayerIndex
+                    )
+                  }
                   onRemoveButtonMapping={(buttonIndex) =>
                     removeButtonMapping(
                       selectedGamepad.index,
@@ -250,6 +259,13 @@ function App() {
                     removeDpadMapping(
                       selectedGamepad.index,
                       direction,
+                      selectedLayerIndex
+                    )
+                  }
+                  onRemoveComboMapping={(comboId) =>
+                    removeComboMapping(
+                      selectedGamepad.index,
+                      comboId,
                       selectedLayerIndex
                     )
                   }

@@ -9,6 +9,11 @@ export const DEFAULT_STICK_THRESHOLD_PREVIEW = 0.3
 export const DEFAULT_STICK_DIRECTION_GAP_DEGREES = 0
 export const MAX_STICK_DIRECTION_GAP_DEGREES = 30
 
+// Combo defaults
+export const DEFAULT_COMBO_TERM_MS = 80
+export const MIN_COMBO_TERM_MS = 20
+export const MAX_COMBO_TERM_MS = 250
+
 // Mouse control defaults
 export const DEFAULT_MOUSE_SENSITIVITY = 1.0
 export const DEFAULT_MOUSE_ACCELERATION = 1.0
