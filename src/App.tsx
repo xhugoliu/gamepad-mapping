@@ -13,7 +13,9 @@ import { useGamepadMapping } from "./hooks/useGamepadMapping";
 function App() {
   const gamepads = useGamepad();
   const {
-    getMapping,
+    getLayers,
+    getLayerView,
+    ensureLayer,
     setButtonMapping,
     setAxisMapping,
     setDpadMapping,
@@ -31,6 +33,7 @@ function App() {
   const [selectedGamepadIndex, setSelectedGamepadIndex] = useState<
     number | null
   >(null);
+  const [selectedLayerIndex, setSelectedLayerIndex] = useState(0);
   const [selectedControl, setSelectedControl] = useState<SelectedControl>(null);
 
   // Automatically select the first gamepad if available
@@ -39,6 +42,7 @@ function App() {
       setSelectedGamepadIndex(gamepads[0].index);
     } else if (gamepads.length === 0) {
       setSelectedGamepadIndex(null);
+      setSelectedLayerIndex(0);
       setSelectedControl(null);
     }
   }, [gamepads, selectedGamepadIndex]);
@@ -46,23 +50,60 @@ function App() {
   const selectedGamepad = gamepads.find(
     (g) => g.index === selectedGamepadIndex
   );
-  const selectedMapping = selectedGamepad
-    ? getMapping(selectedGamepad.index)
+  const selectedGamepadId = selectedGamepad?.index ?? null;
+  const selectedLayers =
+    selectedGamepadId !== null ? getLayers(selectedGamepadId) : [];
+  const selectedMapping =
+    selectedGamepadId !== null
+      ? getLayerView(selectedGamepadId, selectedLayerIndex)
     : undefined;
+
+  useEffect(() => {
+    if (selectedGamepadId === null || selectedLayers.length === 0) {
+      return;
+    }
+
+    const selectedLayerExists = selectedLayers.some(
+      (layer) => layer.layerIndex === selectedLayerIndex
+    );
+    if (!selectedLayerExists) {
+      setSelectedLayerIndex(selectedLayers[0].layerIndex);
+    }
+  }, [selectedGamepadId, selectedLayerIndex, selectedLayers]);
 
   const handleControlSelect = useCallback(
     (control: SelectedControl) => {
       setSelectedControl(control);
       setEditingButton(null);
       setEditingAxis(null);
+      setEditingDpad(null);
     },
-    [setEditingButton, setEditingAxis]
+    [setEditingButton, setEditingAxis, setEditingDpad]
   );
 
   const handleSelectGamepad = (index: number) => {
     setSelectedGamepadIndex(index);
+    setSelectedLayerIndex(0);
     setSelectedControl(null);
   };
+
+  const handleAddLayer = useCallback(() => {
+    if (selectedGamepadId === null) {
+      return;
+    }
+
+    const existingLayerIndices = new Set(
+      selectedLayers.map((layer) => layer.layerIndex)
+    );
+    let nextLayerIndex = 1;
+    while (existingLayerIndices.has(nextLayerIndex)) {
+      nextLayerIndex += 1;
+    }
+
+    ensureLayer(selectedGamepadId, nextLayerIndex);
+    setSelectedLayerIndex(nextLayerIndex);
+    handleControlSelect(null);
+  }, [ensureLayer, handleControlSelect, selectedGamepadId, selectedLayers]);
 
   return (
     <div className="app">
@@ -105,6 +146,33 @@ function App() {
           <aside className="mapping-panel">
             <div className="panel-header">
               <h2>Mapping</h2>
+              {selectedGamepad && (
+                <div className="layer-toolbar">
+                  <label htmlFor="layer-select">Layer</label>
+                  <select
+                    id="layer-select"
+                    value={selectedLayerIndex}
+                    onChange={(event) => {
+                      setSelectedLayerIndex(Number(event.target.value));
+                      handleControlSelect(null);
+                    }}
+                  >
+                    {selectedLayers.map((layer) => (
+                      <option key={layer.layerIndex} value={layer.layerIndex}>
+                        {layer.layerIndex}: {layer.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="layer-add-button"
+                    type="button"
+                    onClick={handleAddLayer}
+                    title="Add layer"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
             </div>
             <div className="mapping-content">
               {selectedGamepad ? (
@@ -118,7 +186,8 @@ function App() {
                       buttonIndex,
                       key,
                       label,
-                      action
+                      action,
+                      selectedLayerIndex
                     )
                   }
                   onSetAxisMapping={(
@@ -146,7 +215,8 @@ function App() {
                       acceleration,
                       invertX,
                       invertY,
-                      action
+                      action,
+                      selectedLayerIndex
                     )
                   }
                   onSetDpadMapping={(direction, key, label, action) =>
@@ -155,21 +225,31 @@ function App() {
                       direction,
                       key,
                       label,
-                      action
+                      action,
+                      selectedLayerIndex
                     )
                   }
                   onRemoveButtonMapping={(buttonIndex) =>
-                    removeButtonMapping(selectedGamepad.index, buttonIndex)
+                    removeButtonMapping(
+                      selectedGamepad.index,
+                      buttonIndex,
+                      selectedLayerIndex
+                    )
                   }
                   onRemoveAxisMapping={(stickIndex, direction) =>
                     removeAxisMapping(
                       selectedGamepad.index,
                       stickIndex,
-                      direction
+                      direction,
+                      selectedLayerIndex
                     )
                   }
                   onRemoveDpadMapping={(direction) =>
-                    removeDpadMapping(selectedGamepad.index, direction)
+                    removeDpadMapping(
+                      selectedGamepad.index,
+                      direction,
+                      selectedLayerIndex
+                    )
                   }
                   editingButton={editingButton}
                   editingAxis={editingAxis}

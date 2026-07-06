@@ -78,6 +78,50 @@
   margin: 0;
 }
 
+.layer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.875rem;
+}
+
+.layer-toolbar label {
+  color: #86868b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.layer-toolbar select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #d1d1d6;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d1d1f;
+  font-size: 0.8125rem;
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+}
+
+.layer-add-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: #007aff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: background 0.15s ease;
+}
+
+.layer-add-button:hover {
+  background: #0051d5;
+}
+
 .panel-subtitle {
   font-size: 0.75rem;
   color: #86868b;

@@ -64,15 +64,254 @@ export interface DpadMapping {
   action?: MappingAction;
 }
 
+export interface GamepadLayerMapping {
+  layerIndex: number;
+  name: string;
+  buttonMappings: ButtonMapping[];
+  axisMappings: AxisMapping[];
+  dpadMappings: DpadMapping[];
+}
+
 export interface GamepadMapping {
   gamepadIndex: number;
   buttonMappings: ButtonMapping[];
   axisMappings: AxisMapping[];
   dpadMappings?: DpadMapping[];
+  layers?: GamepadLayerMapping[];
 }
 
 const STORAGE_KEY = "gamepad-mappings";
 const SCROLL_STEPS_PER_SECOND = 60;
+const BASE_LAYER_INDEX = 0;
+
+const getLayerName = (layerIndex: number) =>
+  layerIndex === BASE_LAYER_INDEX ? "Base" : `Layer ${layerIndex}`;
+
+const createLayerMapping = (
+  layerIndex: number,
+  buttonMappings: ButtonMapping[] = [],
+  axisMappings: AxisMapping[] = [],
+  dpadMappings: DpadMapping[] = []
+): GamepadLayerMapping => ({
+  layerIndex,
+  name: getLayerName(layerIndex),
+  buttonMappings,
+  axisMappings,
+  dpadMappings,
+});
+
+const normalizeLayerIndex = (layerIndex: number) =>
+  Number.isFinite(layerIndex) ? Math.max(0, Math.floor(layerIndex)) : 0;
+
+const syncLegacyBaseLayer = (mapping: GamepadMapping) => {
+  const baseLayer = mapping.layers?.find(
+    (layer) => layer.layerIndex === BASE_LAYER_INDEX
+  );
+
+  if (!baseLayer) {
+    return;
+  }
+
+  mapping.buttonMappings = baseLayer.buttonMappings;
+  mapping.axisMappings = baseLayer.axisMappings;
+  mapping.dpadMappings = baseLayer.dpadMappings;
+};
+
+const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
+  const layerByIndex = new Map<number, GamepadLayerMapping>();
+
+  mapping.layers?.forEach((layer) => {
+    const layerIndex = normalizeLayerIndex(layer.layerIndex);
+    layerByIndex.set(layerIndex, {
+      layerIndex,
+      name: layer.name || getLayerName(layerIndex),
+      buttonMappings: layer.buttonMappings ?? [],
+      axisMappings: layer.axisMappings ?? [],
+      dpadMappings: layer.dpadMappings ?? [],
+    });
+  });
+
+  if (!layerByIndex.has(BASE_LAYER_INDEX)) {
+    layerByIndex.set(
+      BASE_LAYER_INDEX,
+      createLayerMapping(
+        BASE_LAYER_INDEX,
+        mapping.buttonMappings ?? [],
+        mapping.axisMappings ?? [],
+        mapping.dpadMappings ?? []
+      )
+    );
+  }
+
+  const layers = Array.from(layerByIndex.values()).sort(
+    (a, b) => a.layerIndex - b.layerIndex
+  );
+  const baseLayer = layers.find(
+    (layer) => layer.layerIndex === BASE_LAYER_INDEX
+  )!;
+
+  return {
+    ...mapping,
+    buttonMappings: baseLayer.buttonMappings,
+    axisMappings: baseLayer.axisMappings,
+    dpadMappings: baseLayer.dpadMappings,
+    layers,
+  };
+};
+
+const createGamepadMapping = (gamepadIndex: number): GamepadMapping =>
+  normalizeGamepadMapping({
+    gamepadIndex,
+    buttonMappings: [],
+    axisMappings: [],
+    dpadMappings: [],
+  });
+
+const getOrCreateLayerMapping = (
+  mapping: GamepadMapping,
+  layerIndex: number
+) => {
+  const normalizedLayerIndex = normalizeLayerIndex(layerIndex);
+  let layers = mapping.layers ?? [];
+  let layer = layers.find(
+    (candidate) => candidate.layerIndex === normalizedLayerIndex
+  );
+
+  if (!layer) {
+    layer = createLayerMapping(normalizedLayerIndex);
+    layers = [...layers, layer].sort((a, b) => a.layerIndex - b.layerIndex);
+    mapping.layers = layers;
+  }
+
+  syncLegacyBaseLayer(mapping);
+  return layer;
+};
+
+const getTopActiveLayerMapping = (
+  mapping: GamepadMapping,
+  activeLayerIndices: number[]
+) => {
+  const layersForRead =
+    mapping.layers && mapping.layers.length > 0
+      ? mapping.layers
+      : [
+          createLayerMapping(
+            BASE_LAYER_INDEX,
+            mapping.buttonMappings ?? [],
+            mapping.axisMappings ?? [],
+            mapping.dpadMappings ?? []
+          ),
+        ];
+  const layersByIndex = new Map(
+    layersForRead.map((layer) => [layer.layerIndex, layer])
+  );
+  const orderedIndices =
+    activeLayerIndices.length > 0 ? activeLayerIndices : [BASE_LAYER_INDEX];
+  const topLayerIndex = normalizeLayerIndex(
+    orderedIndices[orderedIndices.length - 1]
+  );
+
+  return layersByIndex.get(topLayerIndex) ?? null;
+};
+
+const getEffectiveButtonMappings = (
+  mapping: GamepadMapping,
+  activeLayerIndices: number[]
+) => {
+  return (
+    getTopActiveLayerMapping(mapping, activeLayerIndices)?.buttonMappings ?? []
+  );
+};
+
+const getEffectiveDpadMappings = (
+  mapping: GamepadMapping,
+  activeLayerIndices: number[]
+) => {
+  return getTopActiveLayerMapping(mapping, activeLayerIndices)?.dpadMappings ?? [];
+};
+
+const getEffectiveAxisMappings = (
+  mapping: GamepadMapping,
+  activeLayerIndices: number[]
+) => {
+  return getTopActiveLayerMapping(mapping, activeLayerIndices)?.axisMappings ?? [];
+};
+
+const areSameMappingActions = (
+  previousAction: MappingAction,
+  nextAction: MappingAction
+) => {
+  if (previousAction.type !== nextAction.type) {
+    return false;
+  }
+
+  if (previousAction.type === "input" && nextAction.type === "input") {
+    return previousAction.key === nextAction.key;
+  }
+
+  if (previousAction.type === "layer" && nextAction.type === "layer") {
+    return (
+      previousAction.mode === nextAction.mode &&
+      previousAction.layer === nextAction.layer
+    );
+  }
+
+  return false;
+};
+
+const getPressedStateForStateKey = (
+  gamepad: GamepadState,
+  stateKey: string
+) => {
+  const prefix = `gamepad-${gamepad.index}-`;
+  if (!stateKey.startsWith(prefix)) {
+    return false;
+  }
+
+  const inputKey = stateKey.slice(prefix.length);
+
+  if (inputKey.startsWith("button-")) {
+    const buttonIndex = Number(inputKey.slice("button-".length));
+    return gamepad.buttons[buttonIndex]?.pressed ?? false;
+  }
+
+  if (inputKey.startsWith("dpad-")) {
+    const direction = inputKey.slice("dpad-".length) as StickDirection;
+    return getDpadDirection(gamepad.buttons) === direction;
+  }
+
+  if (inputKey.startsWith("axis-")) {
+    const axisKey = inputKey.slice("axis-".length);
+    const separatorIndex = axisKey.indexOf("-");
+    if (separatorIndex < 0) {
+      return false;
+    }
+
+    const stickIndex = Number(axisKey.slice(0, separatorIndex));
+    const direction = axisKey.slice(separatorIndex + 1) as StickDirection;
+    const { axisXIndex, axisYIndex } = getStickAxes(stickIndex);
+
+    return (
+      getStickDirection(
+        gamepad.axes[axisXIndex] || 0,
+        gamepad.axes[axisYIndex] || 0,
+        DEFAULT_STICK_THRESHOLD
+      ) === direction
+    );
+  }
+
+  return false;
+};
+
+interface EffectiveMappingsSnapshot {
+  mapping: GamepadMapping;
+  activeLayerKey: string;
+  buttonMappings: ButtonMapping[];
+  dpadMappings: DpadMapping[];
+  mouseMappings: AxisMapping[];
+  scrollMappings: AxisMapping[];
+  hotkeyMappingsByStick: Array<[number, AxisMapping[]]>;
+}
 
 export function useGamepadMapping(gamepads: GamepadState[]) {
   const [mappings, setMappings] = useState<GamepadMapping[]>([]);
@@ -95,31 +334,47 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        setMappings(JSON.parse(saved));
+        const savedMappings = JSON.parse(saved) as GamepadMapping[];
+        setMappings(savedMappings.map(normalizeGamepadMapping));
       } catch (e) {
         console.error("Failed to load mappings:", e);
       }
     }
   }, []);
 
-  // Initialize mappings for new gamepads
+  const connectedGamepadIndicesKey = gamepads
+    .map((gamepad) => gamepad.index)
+    .sort((a, b) => a - b)
+    .join(",");
+
+  // Initialize mappings for newly connected gamepads only.
   useEffect(() => {
+    const connectedGamepadIndices = connectedGamepadIndicesKey
+      ? connectedGamepadIndicesKey.split(",").map(Number)
+      : [];
+
+    if (connectedGamepadIndices.length === 0) {
+      return;
+    }
+
     setMappings((prev) => {
-      const updated = [...prev];
-      gamepads.forEach((gamepad) => {
-        const existing = updated.find((m) => m.gamepadIndex === gamepad.index);
+      let updated = prev;
+      let changed = false;
+
+      connectedGamepadIndices.forEach((gamepadIndex) => {
+        const existing = updated.find((m) => m.gamepadIndex === gamepadIndex);
         if (!existing) {
-          updated.push({
-            gamepadIndex: gamepad.index,
-            buttonMappings: [],
-            axisMappings: [],
-            dpadMappings: [],
-          });
+          if (!changed) {
+            updated = [...prev];
+            changed = true;
+          }
+          updated.push(createGamepadMapping(gamepadIndex));
         }
       });
-      return updated;
+
+      return changed ? updated : prev;
     });
-  }, [gamepads]);
+  }, [connectedGamepadIndicesKey]);
 
   // Save mappings to localStorage
   useEffect(() => {
@@ -135,13 +390,64 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     [mappings]
   );
 
-  // Memoize mouse mappings lookup to avoid filtering every frame
-  const getMouseMappings = useCallback((mapping: GamepadMapping) => {
-    return mapping.axisMappings.filter((m) => m.type === "mouse");
-  }, []);
+  const getLayers = useCallback(
+    (gamepadIndex: number): GamepadLayerMapping[] => {
+      const mapping = getMapping(gamepadIndex);
+      return mapping?.layers ?? [createLayerMapping(0)];
+    },
+    [getMapping]
+  );
 
-  const getScrollMappings = useCallback((mapping: GamepadMapping) => {
-    return mapping.axisMappings.filter((m) => m.type === "scroll");
+  const getLayerView = useCallback(
+    (gamepadIndex: number, layerIndex: number): GamepadMapping | undefined => {
+      const mapping = getMapping(gamepadIndex);
+      if (!mapping) {
+        return undefined;
+      }
+
+      const selectedLayer =
+        mapping.layers?.find(
+          (layer) => layer.layerIndex === normalizeLayerIndex(layerIndex)
+        ) ??
+        mapping.layers?.find(
+          (layer) => layer.layerIndex === BASE_LAYER_INDEX
+        );
+
+      if (!selectedLayer) {
+        return mapping;
+      }
+
+      return {
+        ...mapping,
+        buttonMappings: selectedLayer.buttonMappings,
+        axisMappings: selectedLayer.axisMappings,
+        dpadMappings: selectedLayer.dpadMappings,
+      };
+    },
+    [getMapping]
+  );
+
+  const ensureLayer = useCallback((gamepadIndex: number, layerIndex: number) => {
+    setMappings((prev) => {
+      const updated = [...prev];
+      const mappingIndex = updated.findIndex(
+        (m) => m.gamepadIndex === gamepadIndex
+      );
+      let mapping =
+        mappingIndex >= 0
+          ? normalizeGamepadMapping(updated[mappingIndex])
+          : createGamepadMapping(gamepadIndex);
+
+      getOrCreateLayerMapping(mapping, layerIndex);
+
+      if (mappingIndex >= 0) {
+        updated[mappingIndex] = mapping;
+      } else {
+        updated.push(mapping);
+      }
+
+      return updated;
+    });
   }, []);
 
   const setButtonMapping = useCallback(
@@ -150,23 +456,27 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       buttonIndex: number,
       key: string,
       label: string,
-      action: MappingAction = createInputAction(key, label)
+      action: MappingAction = createInputAction(key, label),
+      layerIndex: number = BASE_LAYER_INDEX
     ) => {
       setMappings((prev) => {
         const updated = [...prev];
-        let mapping = updated.find((m) => m.gamepadIndex === gamepadIndex);
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        let mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : createGamepadMapping(gamepadIndex);
 
-        if (!mapping) {
-          mapping = {
-            gamepadIndex,
-            buttonMappings: [],
-            axisMappings: [],
-            dpadMappings: [],
-          };
+        if (mappingIndex < 0) {
           updated.push(mapping);
+        } else {
+          updated[mappingIndex] = mapping;
         }
 
-        const existingButtonMapping = mapping.buttonMappings.find(
+        const layer = getOrCreateLayerMapping(mapping, layerIndex);
+        const existingButtonMapping = layer.buttonMappings.find(
           (m) => m.buttonIndex === buttonIndex
         );
         if (existingButtonMapping) {
@@ -174,8 +484,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           existingButtonMapping.label = label;
           existingButtonMapping.action = action;
         } else {
-          mapping.buttonMappings.push({ buttonIndex, key, label, action });
+          layer.buttonMappings.push({ buttonIndex, key, label, action });
         }
+        syncLegacyBaseLayer(mapping);
 
         return updated;
       });
@@ -197,25 +508,30 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       acceleration: number = DEFAULT_MOUSE_ACCELERATION,
       invertX: boolean = DEFAULT_MOUSE_INVERT_X,
       invertY: boolean = DEFAULT_MOUSE_INVERT_Y,
-      action: MappingAction = createInputAction(key, label)
+      action: MappingAction = createInputAction(key, label),
+      layerIndex: number = BASE_LAYER_INDEX
     ) => {
       setMappings((prev) => {
         const updated = [...prev];
-        let mapping = updated.find((m) => m.gamepadIndex === gamepadIndex);
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        let mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : createGamepadMapping(gamepadIndex);
 
-        if (!mapping) {
-          mapping = {
-            gamepadIndex,
-            buttonMappings: [],
-            axisMappings: [],
-            dpadMappings: [],
-          };
+        if (mappingIndex < 0) {
           updated.push(mapping);
+        } else {
+          updated[mappingIndex] = mapping;
         }
+
+        const layer = getOrCreateLayerMapping(mapping, layerIndex);
 
         if (type === "mouse" || type === "scroll") {
           // For continuous modes, there's only one mapping per stick (direction doesn't matter)
-          const existingContinuousMapping = mapping.axisMappings.find(
+          const existingContinuousMapping = layer.axisMappings.find(
             (m) => m.stickIndex === stickIndex && m.type === type
           );
           if (existingContinuousMapping) {
@@ -229,10 +545,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             existingContinuousMapping.invertY = invertY;
           } else {
             // Remove all other mappings for this stick when adding a continuous mapping
-            mapping.axisMappings = mapping.axisMappings.filter(
+            layer.axisMappings = layer.axisMappings.filter(
               (m) => m.stickIndex !== stickIndex
             );
-            mapping.axisMappings.push({
+            layer.axisMappings.push({
               stickIndex,
               direction: "up",
               key: type === "mouse" ? "Mouse" : "Scroll",
@@ -248,7 +564,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           }
         } else {
           // Hotkey mode - individual direction mappings
-          const existingAxisMapping = mapping.axisMappings.find(
+          const existingAxisMapping = layer.axisMappings.find(
             (m) =>
               m.stickIndex === stickIndex &&
               m.direction === direction &&
@@ -261,10 +577,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             existingAxisMapping.threshold = threshold;
           } else {
             // Remove continuous mapping if exists when adding hotkey mapping
-            mapping.axisMappings = mapping.axisMappings.filter(
+            layer.axisMappings = layer.axisMappings.filter(
               (m) => !(m.stickIndex === stickIndex && m.type !== "hotkey")
             );
-            mapping.axisMappings.push({
+            layer.axisMappings.push({
               stickIndex,
               direction,
               key,
@@ -275,6 +591,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             });
           }
         }
+        syncLegacyBaseLayer(mapping);
 
         return updated;
       });
@@ -284,14 +601,27 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   );
 
   const removeButtonMapping = useCallback(
-    (gamepadIndex: number, buttonIndex: number) => {
+    (
+      gamepadIndex: number,
+      buttonIndex: number,
+      layerIndex: number = BASE_LAYER_INDEX
+    ) => {
       setMappings((prev) => {
         const updated = [...prev];
-        const mapping = updated.find((m) => m.gamepadIndex === gamepadIndex);
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        const mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : undefined;
         if (mapping) {
-          mapping.buttonMappings = mapping.buttonMappings.filter(
+          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          layer.buttonMappings = layer.buttonMappings.filter(
             (m) => m.buttonIndex !== buttonIndex
           );
+          syncLegacyBaseLayer(mapping);
+          updated[mappingIndex] = mapping;
         }
         return updated;
       });
@@ -300,14 +630,28 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   );
 
   const removeAxisMapping = useCallback(
-    (gamepadIndex: number, stickIndex: number, direction: StickDirection) => {
+    (
+      gamepadIndex: number,
+      stickIndex: number,
+      direction: StickDirection,
+      layerIndex: number = BASE_LAYER_INDEX
+    ) => {
       setMappings((prev) => {
         const updated = [...prev];
-        const mapping = updated.find((m) => m.gamepadIndex === gamepadIndex);
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        const mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : undefined;
         if (mapping) {
-          mapping.axisMappings = mapping.axisMappings.filter(
+          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          layer.axisMappings = layer.axisMappings.filter(
             (m) => !(m.stickIndex === stickIndex && m.direction === direction)
           );
+          syncLegacyBaseLayer(mapping);
+          updated[mappingIndex] = mapping;
         }
         return updated;
       });
@@ -321,27 +665,27 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       direction: StickDirection,
       key: string,
       label: string,
-      action: MappingAction = createInputAction(key, label)
+      action: MappingAction = createInputAction(key, label),
+      layerIndex: number = BASE_LAYER_INDEX
     ) => {
       setMappings((prev) => {
         const updated = [...prev];
-        let mapping = updated.find((m) => m.gamepadIndex === gamepadIndex);
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        let mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : createGamepadMapping(gamepadIndex);
 
-        if (!mapping) {
-          mapping = {
-            gamepadIndex,
-            buttonMappings: [],
-            axisMappings: [],
-            dpadMappings: [],
-          };
+        if (mappingIndex < 0) {
           updated.push(mapping);
+        } else {
+          updated[mappingIndex] = mapping;
         }
 
-        if (!mapping.dpadMappings) {
-          mapping.dpadMappings = [];
-        }
-
-        const existingDpadMapping = mapping.dpadMappings.find(
+        const layer = getOrCreateLayerMapping(mapping, layerIndex);
+        const existingDpadMapping = layer.dpadMappings.find(
           (m) => m.direction === direction
         );
         if (existingDpadMapping) {
@@ -349,8 +693,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           existingDpadMapping.label = label;
           existingDpadMapping.action = action;
         } else {
-          mapping.dpadMappings.push({ direction, key, label, action });
+          layer.dpadMappings.push({ direction, key, label, action });
         }
+        syncLegacyBaseLayer(mapping);
 
         return updated;
       });
@@ -360,14 +705,27 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   );
 
   const removeDpadMapping = useCallback(
-    (gamepadIndex: number, direction: StickDirection) => {
+    (
+      gamepadIndex: number,
+      direction: StickDirection,
+      layerIndex: number = BASE_LAYER_INDEX
+    ) => {
       setMappings((prev) => {
         const updated = [...prev];
-        const mapping = updated.find((m) => m.gamepadIndex === gamepadIndex);
-        if (mapping && mapping.dpadMappings) {
-          mapping.dpadMappings = mapping.dpadMappings.filter(
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        const mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : undefined;
+        if (mapping) {
+          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          layer.dpadMappings = layer.dpadMappings.filter(
             (m) => m.direction !== direction
           );
+          syncLegacyBaseLayer(mapping);
+          updated[mappingIndex] = mapping;
         }
         return updated;
       });
@@ -408,11 +766,18 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   const lastScrollUpdateTimeRef = useRef<Map<string, number>>(new Map());
   // Track when each stick started moving for time-based acceleration
   const stickMovementStartTimeRef = useRef<Map<string, number>>(new Map());
+  const gamepadsRef = useRef<GamepadState[]>([]);
   const previousInternalActionStatesRef = useRef<Map<string, boolean>>(new Map());
-  const momentaryLayerHoldersRef = useRef<Map<number, Set<string>>>(new Map());
-  const toggledLayersRef = useRef<Set<number>>(new Set());
-  const defaultLayerRef = useRef(0);
-  const activeLayersRef = useRef<number[]>([0]);
+  const momentaryLayerHoldersRef = useRef<
+    Map<number, Map<number, Set<string>>>
+  >(new Map());
+  const toggledLayersRef = useRef<Map<number, Set<number>>>(new Map());
+  const defaultLayerRef = useRef<Map<number, number>>(new Map());
+  const activeLayersRef = useRef<Map<number, number[]>>(new Map());
+  const activeActionsRef = useRef<Map<string, MappingAction>>(new Map());
+  const effectiveMappingsCacheRef = useRef<
+    Map<number, EffectiveMappingsSnapshot>
+  >(new Map());
 
   const isMouseWheelKey = (key: string) => key.startsWith("MouseWheel");
 
@@ -461,24 +826,109 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     [sendMouseScroll]
   );
 
-  const refreshActiveLayers = useCallback(() => {
-    const momentaryLayers = Array.from(
-      momentaryLayerHoldersRef.current.entries()
-    )
+  const getActiveLayerIndices = useCallback((gamepadIndex: number) => {
+    return (
+      activeLayersRef.current.get(gamepadIndex) ?? [
+        defaultLayerRef.current.get(gamepadIndex) ?? BASE_LAYER_INDEX,
+      ]
+    );
+  }, []);
+
+  const getEffectiveMappingsSnapshot = useCallback(
+    (
+      gamepadIndex: number,
+      mapping: GamepadMapping,
+      activeLayerIndices: number[]
+    ): EffectiveMappingsSnapshot => {
+      const activeLayerKey = activeLayerIndices.join("|");
+      const cached = effectiveMappingsCacheRef.current.get(gamepadIndex);
+      if (
+        cached &&
+        cached.mapping === mapping &&
+        cached.activeLayerKey === activeLayerKey
+      ) {
+        return cached;
+      }
+
+      const axisMappings = getEffectiveAxisMappings(mapping, activeLayerIndices);
+      const mouseMappingsByStick = new Map<number, AxisMapping>();
+      const scrollMappingsByStick = new Map<number, AxisMapping>();
+
+      axisMappings.forEach((axisMapping) => {
+        if (axisMapping.type === "mouse") {
+          if (!mouseMappingsByStick.has(axisMapping.stickIndex)) {
+            mouseMappingsByStick.set(axisMapping.stickIndex, axisMapping);
+          }
+        } else if (axisMapping.type === "scroll") {
+          if (!scrollMappingsByStick.has(axisMapping.stickIndex)) {
+            scrollMappingsByStick.set(axisMapping.stickIndex, axisMapping);
+          }
+        }
+      });
+
+      const sticksWithContinuous = new Set([
+        ...Array.from(mouseMappingsByStick.keys()),
+        ...Array.from(scrollMappingsByStick.keys()),
+      ]);
+      const hotkeyMappingsByStick = axisMappings.reduce(
+        (acc, axisMapping) => {
+          if (
+            axisMapping.type === "hotkey" &&
+            !sticksWithContinuous.has(axisMapping.stickIndex)
+          ) {
+            acc.set(
+              axisMapping.stickIndex,
+              (acc.get(axisMapping.stickIndex) ?? []).concat(axisMapping)
+            );
+          }
+          return acc;
+        },
+        new Map<number, AxisMapping[]>()
+      );
+
+      const snapshot = {
+        mapping,
+        activeLayerKey,
+        buttonMappings: getEffectiveButtonMappings(mapping, activeLayerIndices),
+        dpadMappings: getEffectiveDpadMappings(mapping, activeLayerIndices),
+        mouseMappings: Array.from(mouseMappingsByStick.values()),
+        scrollMappings: Array.from(scrollMappingsByStick.values()),
+        hotkeyMappingsByStick: Array.from(hotkeyMappingsByStick.entries()),
+      };
+
+      effectiveMappingsCacheRef.current.set(gamepadIndex, snapshot);
+      return snapshot;
+    },
+    []
+  );
+
+  const refreshActiveLayers = useCallback((gamepadIndex: number) => {
+    const momentaryLayerHolders =
+      momentaryLayerHoldersRef.current.get(gamepadIndex) ?? new Map();
+    const momentaryLayers = Array.from(momentaryLayerHolders.entries())
       .filter(([, holders]) => holders.size > 0)
       .map(([layer]) => layer);
+    const defaultLayer =
+      defaultLayerRef.current.get(gamepadIndex) ?? BASE_LAYER_INDEX;
+    const toggledLayers = toggledLayersRef.current.get(gamepadIndex) ?? new Set();
 
-    activeLayersRef.current = Array.from(
-      new Set([
-        defaultLayerRef.current,
-        ...Array.from(toggledLayersRef.current),
+    activeLayersRef.current.set(
+      gamepadIndex,
+      Array.from(new Set([
+        defaultLayer,
+        ...Array.from(toggledLayers),
         ...momentaryLayers,
-      ])
+      ]))
     );
   }, []);
 
   const handleLayerAction = useCallback(
-    (action: LayerAction, pressed: boolean, stateKey: string) => {
+    (
+      action: LayerAction,
+      pressed: boolean,
+      stateKey: string,
+      gamepadIndex: number
+    ) => {
       const previousState = previousInternalActionStatesRef.current.get(stateKey);
       if (previousState === pressed) {
         return;
@@ -486,17 +936,23 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       previousInternalActionStatesRef.current.set(stateKey, pressed);
 
       if (action.mode === "momentary") {
-        if (!momentaryLayerHoldersRef.current.has(action.layer)) {
-          momentaryLayerHoldersRef.current.set(action.layer, new Set());
+        if (!momentaryLayerHoldersRef.current.has(gamepadIndex)) {
+          momentaryLayerHoldersRef.current.set(gamepadIndex, new Map());
         }
 
-        const holders = momentaryLayerHoldersRef.current.get(action.layer)!;
+        const momentaryLayerHolders =
+          momentaryLayerHoldersRef.current.get(gamepadIndex)!;
+        if (!momentaryLayerHolders.has(action.layer)) {
+          momentaryLayerHolders.set(action.layer, new Set());
+        }
+
+        const holders = momentaryLayerHolders.get(action.layer)!;
         if (pressed) {
           holders.add(stateKey);
         } else {
           holders.delete(stateKey);
         }
-        refreshActiveLayers();
+        refreshActiveLayers(gamepadIndex);
         return;
       }
 
@@ -505,20 +961,25 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       }
 
       if (action.mode === "toggle") {
-        if (toggledLayersRef.current.has(action.layer)) {
-          toggledLayersRef.current.delete(action.layer);
+        if (!toggledLayersRef.current.has(gamepadIndex)) {
+          toggledLayersRef.current.set(gamepadIndex, new Set());
+        }
+
+        const toggledLayers = toggledLayersRef.current.get(gamepadIndex)!;
+        if (toggledLayers.has(action.layer)) {
+          toggledLayers.delete(action.layer);
         } else {
-          toggledLayersRef.current.add(action.layer);
+          toggledLayers.add(action.layer);
         }
       } else if (action.mode === "switch") {
-        toggledLayersRef.current.clear();
-        momentaryLayerHoldersRef.current.clear();
-        defaultLayerRef.current = action.layer;
+        toggledLayersRef.current.set(gamepadIndex, new Set());
+        momentaryLayerHoldersRef.current.set(gamepadIndex, new Map());
+        defaultLayerRef.current.set(gamepadIndex, action.layer);
       } else if (action.mode === "default") {
-        defaultLayerRef.current = action.layer;
+        defaultLayerRef.current.set(gamepadIndex, action.layer);
       }
 
-      refreshActiveLayers();
+      refreshActiveLayers(gamepadIndex);
     },
     [refreshActiveLayers]
   );
@@ -536,7 +997,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       }
 
       // Update previous state
-      if (stateKey.startsWith("button-")) {
+      if (stateKey.includes("-button-") || stateKey.includes("-dpad-")) {
         previousButtonStatesRef.current.set(stateKey, pressed);
       } else {
         previousAxisStatesRef.current.set(stateKey, pressed);
@@ -631,58 +1092,174 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     [triggerMappedWheelScroll]
   );
 
-  const triggerMappedAction = useCallback(
-    (
-      mapping: { key: string; label: string; action?: MappingAction },
-      pressed: boolean,
-      stateKey: string
-    ) => {
-      const { action } = normalizeMappingAssignment(mapping);
-
+  const pressMappedAction = useCallback(
+    (action: MappingAction, stateKey: string, gamepadIndex: number) => {
       if (action.type === "layer") {
-        handleLayerAction(action, pressed, stateKey);
+        handleLayerAction(action, true, stateKey, gamepadIndex);
         return;
       }
 
       if (isMouseWheelKey(action.key)) {
-        if (pressed) {
-          triggerMappedWheelScroll(action.key, stateKey);
-        }
+        triggerMappedWheelScroll(action.key, stateKey);
         return;
       }
 
-      simulateKeyPress(action.key, pressed, stateKey);
+      simulateKeyPress(action.key, true, stateKey);
     },
     [handleLayerAction, simulateKeyPress, triggerMappedWheelScroll]
   );
 
-  // Check and trigger mappings based on gamepad state
+  const releaseMappedAction = useCallback(
+    (action: MappingAction, stateKey: string, gamepadIndex: number) => {
+      if (action.type === "layer") {
+        handleLayerAction(action, false, stateKey, gamepadIndex);
+        return;
+      }
+
+      if (isMouseWheelKey(action.key)) {
+        return;
+      }
+
+      simulateKeyPress(action.key, false, stateKey);
+    },
+    [handleLayerAction, simulateKeyPress]
+  );
+
+  const triggerMappedAction = useCallback(
+    (
+      mapping: { key: string; label: string; action?: MappingAction },
+      pressed: boolean,
+      stateKey: string,
+      gamepadIndex: number
+    ) => {
+      const { action } = normalizeMappingAssignment(mapping);
+      const activeAction = activeActionsRef.current.get(stateKey);
+
+      if (!pressed) {
+        releaseMappedAction(activeAction ?? action, stateKey, gamepadIndex);
+        activeActionsRef.current.delete(stateKey);
+        return;
+      }
+
+      if (activeAction && !areSameMappingActions(activeAction, action)) {
+        releaseMappedAction(activeAction, stateKey, gamepadIndex);
+      }
+
+      activeActionsRef.current.set(stateKey, action);
+      pressMappedAction(action, stateKey, gamepadIndex);
+    },
+    [pressMappedAction, releaseMappedAction]
+  );
+
+  const releaseInactiveActionsForGamepad = useCallback(
+    (gamepadIndex: number, seenStateKeys: Set<string>) => {
+      const stateKeyPrefix = `gamepad-${gamepadIndex}-`;
+      activeActionsRef.current.forEach((action, stateKey) => {
+        if (
+          stateKey.startsWith(stateKeyPrefix) &&
+          !seenStateKeys.has(stateKey)
+        ) {
+          releaseMappedAction(action, stateKey, gamepadIndex);
+          activeActionsRef.current.delete(stateKey);
+        }
+      });
+    },
+    [releaseMappedAction]
+  );
+
+  const reconcileActiveLayerActionHoldersForGamepad = useCallback(
+    (gamepad: GamepadState, seenStateKeys: Set<string>) => {
+      const preservedStateKeys = new Set<string>();
+      const stateKeyPrefix = `gamepad-${gamepad.index}-`;
+
+      Array.from(activeActionsRef.current.entries()).forEach(
+        ([stateKey, action]) => {
+          if (!stateKey.startsWith(stateKeyPrefix) || action.type !== "layer") {
+            return;
+          }
+
+          seenStateKeys.add(stateKey);
+          if (getPressedStateForStateKey(gamepad, stateKey)) {
+            preservedStateKeys.add(stateKey);
+            return;
+          }
+
+          releaseMappedAction(action, stateKey, gamepad.index);
+          activeActionsRef.current.delete(stateKey);
+        }
+      );
+
+      return preservedStateKeys;
+    },
+    [releaseMappedAction]
+  );
+
   useEffect(() => {
-    gamepads.forEach((gamepad) => {
+    gamepadsRef.current = gamepads;
+  }, [gamepads]);
+
+  // Check and trigger mappings based on the latest gamepad state.
+  const processGamepadMappings = useCallback(() => {
+    gamepadsRef.current.forEach((gamepad) => {
+      const seenStateKeys = new Set<string>();
+      const preservedLayerActionStateKeys =
+        reconcileActiveLayerActionHoldersForGamepad(gamepad, seenStateKeys);
       const mapping = getMapping(gamepad.index);
-      if (!mapping) return;
+      if (!mapping) {
+        releaseInactiveActionsForGamepad(gamepad.index, seenStateKeys);
+        return;
+      }
+
+      const activeLayerIndices = getActiveLayerIndices(gamepad.index);
+      const effectiveMappings = getEffectiveMappingsSnapshot(
+        gamepad.index,
+        mapping,
+        activeLayerIndices
+      );
+      const {
+        buttonMappings,
+        dpadMappings,
+        mouseMappings,
+        scrollMappings,
+        hotkeyMappingsByStick,
+      } = effectiveMappings;
 
       // Check button mappings
-      mapping.buttonMappings.forEach((btnMapping) => {
+      buttonMappings.forEach((btnMapping) => {
         const button = gamepad.buttons[btnMapping.buttonIndex];
         if (button) {
           const stateKey = `gamepad-${gamepad.index}-button-${btnMapping.buttonIndex}`;
-          triggerMappedAction(btnMapping, button.pressed, stateKey);
+          if (preservedLayerActionStateKeys.has(stateKey)) {
+            return;
+          }
+
+          seenStateKeys.add(stateKey);
+          triggerMappedAction(
+            btnMapping,
+            button.pressed,
+            stateKey,
+            gamepad.index
+          );
         }
       });
 
       // Check dpad mappings with combined keys
-      if (mapping.dpadMappings && mapping.dpadMappings.length > 0) {
+      if (dpadMappings.length > 0) {
         const currentDirection = getDpadDirection(gamepad.buttons);
 
         // Check if there's a direct mapping for the current direction
         const hasDirectMapping =
           currentDirection &&
-          mapping.dpadMappings.some((m) => m.direction === currentDirection);
+          dpadMappings.some((m) => m.direction === currentDirection);
 
         // Process each dpad mapping
-        mapping.dpadMappings.forEach((dpadMapping) => {
+        dpadMappings.forEach((dpadMapping) => {
           const stateKey = `gamepad-${gamepad.index}-dpad-${dpadMapping.direction}`;
+          if (preservedLayerActionStateKeys.has(stateKey)) {
+            return;
+          }
+
+          seenStateKeys.add(stateKey);
           let isActive = false;
 
           if (currentDirection === dpadMapping.direction) {
@@ -694,27 +1271,14 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             isActive = fallbackDirections.includes(dpadMapping.direction);
           }
 
-          triggerMappedAction(dpadMapping, isActive, stateKey);
+          triggerMappedAction(dpadMapping, isActive, stateKey, gamepad.index);
         });
       }
 
       // Process axis mappings - handle both hotkey and mouse control modes
-      // Check if mouse mode is enabled for each stick
-      const mouseMappings = getMouseMappings(mapping);
-      const scrollMappings = getScrollMappings(mapping);
-      const sticksWithContinuous = new Set([
-        ...mouseMappings.map((m) => m.stickIndex),
-        ...scrollMappings.map((m) => m.stickIndex),
-      ]);
-      const processedMouseSticks = new Set<number>();
-
       // Process mouse mappings first (one per stick)
       mouseMappings.forEach((mouseMapping) => {
         const stickIndex = mouseMapping.stickIndex;
-        if (processedMouseSticks.has(stickIndex)) {
-          return; // Already processed this stick
-        }
-        processedMouseSticks.add(stickIndex);
 
         // Get stick axes based on stick index
         const { axisXIndex, axisYIndex } = getStickAxes(stickIndex);
@@ -822,15 +1386,9 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         }
       });
 
-      const processedScrollSticks = new Set<number>();
-
       // Process scroll mappings first (one per stick)
       scrollMappings.forEach((scrollMapping) => {
         const stickIndex = scrollMapping.stickIndex;
-        if (processedScrollSticks.has(stickIndex)) {
-          return;
-        }
-        processedScrollSticks.add(stickIndex);
 
         const { axisXIndex, axisYIndex } = getStickAxes(stickIndex);
         let stickX = gamepad.axes[axisXIndex] || 0;
@@ -936,26 +1494,8 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         sendMouseScroll(stepsX, stepsY);
       });
 
-      // Process hotkey mappings (skip if a continuous mode is enabled for that stick)
-      // Group by stick index to check for direct mappings efficiently
-      const stickMappingsByStick = mapping.axisMappings.reduce(
-        (acc, axisMapping) => {
-          if (
-            axisMapping.type === "hotkey" &&
-            !sticksWithContinuous.has(axisMapping.stickIndex)
-          ) {
-            acc.set(
-              axisMapping.stickIndex,
-              (acc.get(axisMapping.stickIndex) || []).concat(axisMapping)
-            );
-          }
-          return acc;
-        },
-        new Map<number, AxisMapping[]>()
-      );
-
       // Process each stick's mappings
-      stickMappingsByStick.entries().forEach(([stickIndex, axisMappings]) => {
+      hotkeyMappingsByStick.forEach(([stickIndex, axisMappings]) => {
         const { axisXIndex, axisYIndex } = getStickAxes(stickIndex);
         const stickX = gamepad.axes[axisXIndex] || 0;
         const stickY = gamepad.axes[axisYIndex] || 0;
@@ -966,49 +1506,60 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         );
 
         // Process each mapping for this stick
-        Promise.all(
-          axisMappings.map((axisMapping) => {
-            const stateKey = `gamepad-${gamepad.index}-axis-${axisMapping.stickIndex}-${axisMapping.direction}`;
-            const detectedDirection = getStickDirection(
-              stickX,
-              stickY,
-              axisMapping.threshold
-            );
-            let isActive = false;
+        axisMappings.forEach((axisMapping) => {
+          const stateKey = `gamepad-${gamepad.index}-axis-${axisMapping.stickIndex}-${axisMapping.direction}`;
+          if (preservedLayerActionStateKeys.has(stateKey)) {
+            return;
+          }
 
-            if (detectedDirection === axisMapping.direction) {
-              // Direct match
-              isActive = true;
-            } else if (
-              detectedDirection &&
-              !configuredDirections.has(detectedDirection)
-              
-            ) {
-              // No direct mapping configured for detected direction - check if this is a fallback cardinal direction for a diagonal
-              const fallbackDirections =
-                getFallbackDirections(detectedDirection);
-              isActive = fallbackDirections.includes(axisMapping.direction);
-            }
+          seenStateKeys.add(stateKey);
+          const detectedDirection = getStickDirection(
+            stickX,
+            stickY,
+            axisMapping.threshold
+          );
+          let isActive = false;
 
-            triggerMappedAction(axisMapping, isActive, stateKey);
-            return Promise.resolve();
-          })
-        );
+          if (detectedDirection === axisMapping.direction) {
+            // Direct match
+            isActive = true;
+          } else if (
+            detectedDirection &&
+            !configuredDirections.has(detectedDirection)
+          ) {
+            // No direct mapping configured for detected direction - check if this is a fallback cardinal direction for a diagonal
+            const fallbackDirections = getFallbackDirections(detectedDirection);
+            isActive = fallbackDirections.includes(axisMapping.direction);
+          }
+
+          triggerMappedAction(axisMapping, isActive, stateKey, gamepad.index);
+        });
       });
+
+      releaseInactiveActionsForGamepad(gamepad.index, seenStateKeys);
     });
   }, [
-    gamepads,
+    getActiveLayerIndices,
+    getEffectiveMappingsSnapshot,
+    getFallbackDirections,
     getMapping,
-    getMouseMappings,
-    getScrollMappings,
+    reconcileActiveLayerActionHoldersForGamepad,
+    releaseInactiveActionsForGamepad,
     sendMouseScroll,
     triggerMappedAction,
-    triggerMappedWheelScroll,
   ]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(processGamepadMappings, 16);
+    return () => window.clearInterval(intervalId);
+  }, [processGamepadMappings]);
 
   return {
     mappings,
     getMapping,
+    getLayers,
+    getLayerView,
+    ensureLayer,
     setButtonMapping,
     setAxisMapping,
     setDpadMapping,
