@@ -4,6 +4,7 @@ import {
   StickDirection,
   StickMappingType,
 } from "../hooks/useGamepadMapping";
+import { MappingAction } from "../types/mappingAction";
 import { ButtonMappingPanel } from "./ButtonMappingPanel";
 import { StickMappingPanel } from "./StickMappingPanel";
 import { DpadMappingPanel } from "./DpadMappingPanel";
@@ -16,7 +17,12 @@ interface MappingPanelProps {
   gamepad: GamepadState;
   mapping?: GamepadMapping;
   selectedControl: SelectedControl;
-  onSetButtonMapping: (buttonIndex: number, key: string, label: string) => void;
+  onSetButtonMapping: (
+    buttonIndex: number,
+    key: string,
+    label: string,
+    action?: MappingAction
+  ) => void;
   onSetAxisMapping: (
     stickIndex: number,
     direction: StickDirection,
@@ -27,12 +33,14 @@ interface MappingPanelProps {
     sensitivity?: number,
     acceleration?: number,
     invertX?: boolean,
-    invertY?: boolean
+    invertY?: boolean,
+    action?: MappingAction
   ) => void;
   onSetDpadMapping: (
     direction: StickDirection,
     key: string,
-    label: string
+    label: string,
+    action?: MappingAction
   ) => void;
   onRemoveButtonMapping: (buttonIndex: number) => void;
   onRemoveAxisMapping: (stickIndex: number, direction: StickDirection) => void;

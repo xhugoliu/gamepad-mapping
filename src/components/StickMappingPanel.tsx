@@ -8,9 +8,10 @@ import {
 import { StickHotkeyMode } from "./StickHotkeyMode";
 import { StickMouseMode } from "./StickMouseMode";
 import { StickScrollMode } from "./StickScrollMode";
-import { KeyMappingSelector } from "./KeyMappingSelector";
+import { MappingActionSelector } from "./MappingActionSelector";
 import { MappingActions } from "./MappingPanel";
 import { getSticks, getButtonConfig } from "../constants/controllerMappings";
+import { MappingAction, MappingActionAssignment } from "../types/mappingAction";
 import "./MappingPanel.css";
 
 interface StickMappingPanelProps {
@@ -33,7 +34,8 @@ interface StickMappingPanelProps {
     sensitivity?: number,
     acceleration?: number,
     invertX?: boolean,
-    invertY?: boolean
+    invertY?: boolean,
+    action?: MappingAction
   ) => void;
   onRemoveAxisMapping: (stickIndex: number, direction: StickDirection) => void;
   onSetEditingAxis: (
@@ -43,7 +45,7 @@ interface StickMappingPanelProps {
       direction: StickDirection;
     } | null
   ) => void;
-  onSetButtonMapping: (buttonIndex: number, key: string, label: string) => void;
+  onSetButtonMapping: (buttonIndex: number, key: string, label: string, action?: MappingAction) => void;
   onRemoveButtonMapping: (buttonIndex: number) => void;
   onSetEditingButton: (
     value: { gamepadIndex: number; buttonIndex: number } | null
@@ -104,40 +106,39 @@ export function StickMappingPanel({
     ? mapping?.buttonMappings.find((m) => m.buttonIndex === stickButtonIndex)
     : null;
   const isEditingStickButton = editingButton?.buttonIndex === stickButtonIndex;
-  const [pendingStickButtonKey, setPendingStickButtonKey] = useState<{
-    key: string;
-    label: string;
-  } | null>(null);
+  const [pendingStickButtonAction, setPendingStickButtonAction] =
+    useState<MappingActionAssignment | null>(null);
   const [hasUnsavedStickButtonChanges, setHasUnsavedStickButtonChanges] = useState(false);
 
-  const handleStickButtonKeyPress = useCallback(
-    (key: string, label: string) => {
-      setPendingStickButtonKey({ key, label });
+  const handleStickButtonActionChange = useCallback(
+    (assignment: MappingActionAssignment) => {
+      setPendingStickButtonAction(assignment);
       setHasUnsavedStickButtonChanges(true);
     },
     []
   );
 
   const handleStickButtonApply = useCallback(() => {
-    if (pendingStickButtonKey && stickButtonIndex !== undefined) {
+    if (pendingStickButtonAction && stickButtonIndex !== undefined) {
       onSetButtonMapping(
         stickButtonIndex,
-        pendingStickButtonKey.key,
-        pendingStickButtonKey.label
+        pendingStickButtonAction.key,
+        pendingStickButtonAction.label,
+        pendingStickButtonAction.action
       );
-      setPendingStickButtonKey(null);
+      setPendingStickButtonAction(null);
       setHasUnsavedStickButtonChanges(false);
       onSetEditingButton(null);
     }
   }, [
-    pendingStickButtonKey,
+    pendingStickButtonAction,
     stickButtonIndex,
     onSetButtonMapping,
     onSetEditingButton,
   ]);
 
   const handleStickButtonRevert = useCallback(() => {
-    setPendingStickButtonKey(null);
+    setPendingStickButtonAction(null);
     setHasUnsavedStickButtonChanges(false);
     onSetEditingButton(null);
   }, [onSetEditingButton]);
@@ -169,7 +170,7 @@ export function StickMappingPanel({
               }`}
               onClick={() => {
                 if (!isEditingStickButton) {
-                  setPendingStickButtonKey(null);
+                  setPendingStickButtonAction(null);
                   setHasUnsavedStickButtonChanges(false);
                   onSetEditingButton({
                     gamepadIndex: gamepad.index,
@@ -179,24 +180,29 @@ export function StickMappingPanel({
               }}
             >
               <div className="direction-label">{getButtonLabel(stickButtonIndex)}</div>
-              <KeyMappingSelector
+              <MappingActionSelector
                 currentMapping={
                   stickButtonMapping
                     ? {
                         key: stickButtonMapping.key,
                         label: stickButtonMapping.label,
+                        action: stickButtonMapping.action,
                       }
                     : null
                 }
                 isEditing={isEditingStickButton}
-                pendingKey={pendingStickButtonKey}
-                onKeyPress={handleStickButtonKeyPress}
+                pendingAction={pendingStickButtonAction}
+                onActionChange={handleStickButtonActionChange}
+                onActionClear={() => {
+                  setPendingStickButtonAction(null);
+                  setHasUnsavedStickButtonChanges(false);
+                }}
                 onRemove={() => {
                   onRemoveButtonMapping(stickButtonIndex);
                   setHasUnsavedStickButtonChanges(false);
-                  setPendingStickButtonKey(null);
+                  setPendingStickButtonAction(null);
                 }}
-                showRemove={!!stickButtonMapping || !!pendingStickButtonKey}
+                showRemove={!!stickButtonMapping || !!pendingStickButtonAction}
               />
               {stickButton?.pressed && (
                 <span className="active-indicator">●</span>
@@ -206,14 +212,14 @@ export function StickMappingPanel({
 
           {isEditingStickButton && (
             <div className="editing-hint">
-              {pendingStickButtonKey ? (
+              {pendingStickButtonAction ? (
                 <div>
-                  New mapping: <strong>{pendingStickButtonKey.label}</strong>{" "}
+                  New mapping: <strong>{pendingStickButtonAction.label}</strong>{" "}
                   (press Apply Changes to save)
                 </div>
               ) : (
                 <div>
-                  Press a keyboard key or click a mouse button to map...
+                  Choose an action or record a keyboard, mouse, or wheel input...
                 </div>
               )}
             </div>
@@ -226,9 +232,9 @@ export function StickMappingPanel({
             onRemoveMapping={() => {
               onRemoveButtonMapping(stickButtonIndex);
               setHasUnsavedStickButtonChanges(false);
-              setPendingStickButtonKey(null);
+              setPendingStickButtonAction(null);
             }}
-            showRemove={!!stickButtonMapping || !!pendingStickButtonKey}
+            showRemove={!!stickButtonMapping || !!pendingStickButtonAction}
           />
         </div>
       )}

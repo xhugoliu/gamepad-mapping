@@ -2,16 +2,17 @@ import { useState, useCallback } from 'react'
 import { GamepadState } from '../hooks/useGamepad'
 import { GamepadMapping, StickDirection } from '../hooks/useGamepadMapping'
 import { MappingActions } from './MappingPanel'
-import { KeyMappingSelector } from './KeyMappingSelector'
+import { MappingActionSelector } from './MappingActionSelector'
 import { getDpadDirection } from '../utils/stickDirection'
 import { DIRECTION_LABELS, STICK_DIRECTIONS } from '../constants/directionLabels'
+import { MappingAction, MappingActionAssignment } from '../types/mappingAction'
 import './MappingPanel.css'
 
 interface DpadMappingPanelProps {
   gamepad: GamepadState
   mapping?: GamepadMapping
   editingDpad: { gamepadIndex: number; direction: StickDirection } | null
-  onSetDpadMapping: (direction: StickDirection, key: string, label: string) => void
+  onSetDpadMapping: (direction: StickDirection, key: string, label: string, action?: MappingAction) => void
   onRemoveDpadMapping: (direction: StickDirection) => void
   onSetEditingDpad: (value: { gamepadIndex: number; direction: StickDirection } | null) => void
 }
@@ -24,22 +25,22 @@ export function DpadMappingPanel({
   onRemoveDpadMapping,
   onSetEditingDpad,
 }: DpadMappingPanelProps) {
-  const [pendingKeys, setPendingKeys] = useState<Map<StickDirection, { key: string; label: string }>>(new Map())
+  const [pendingActions, setPendingActions] = useState<Map<StickDirection, MappingActionAssignment>>(new Map())
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   const currentDpadDirection = getDpadDirection(gamepad.buttons)
 
-  const handleKeyPress = useCallback((direction: StickDirection, key: string, label: string) => {
-    setPendingKeys(prev => {
+  const handleActionChange = useCallback((direction: StickDirection, assignment: MappingActionAssignment) => {
+    setPendingActions(prev => {
       const newMap = new Map(prev)
-      newMap.set(direction, { key, label })
+      newMap.set(direction, assignment)
       return newMap
     })
     setHasUnsavedChanges(true)
   }, [])
 
   const revertChanges = useCallback(() => {
-    setPendingKeys(new Map())
+    setPendingActions(new Map())
     setHasUnsavedChanges(false)
     onSetEditingDpad(null)
   }, [onSetEditingDpad])
@@ -59,7 +60,7 @@ export function DpadMappingPanel({
         {STICK_DIRECTIONS.map(direction => {
           const dpadMapping = mapping?.dpadMappings?.find(m => m.direction === direction)
           const isEditing = editingDpad?.direction === direction
-          const pendingKey = pendingKeys.get(direction)
+          const pendingAction = pendingActions.get(direction)
           const isActive = currentDpadDirection === direction
 
           return (
@@ -71,21 +72,29 @@ export function DpadMappingPanel({
               }}
             >
               <div className="direction-label">{DIRECTION_LABELS[direction]}</div>
-              <KeyMappingSelector
-                currentMapping={dpadMapping ? { key: dpadMapping.key, label: dpadMapping.label } : null}
+              <MappingActionSelector
+                currentMapping={dpadMapping ? { key: dpadMapping.key, label: dpadMapping.label, action: dpadMapping.action } : null}
                 isEditing={isEditing}
-                pendingKey={pendingKey || null}
-                onKeyPress={(key, label) => handleKeyPress(direction, key, label)}
-                onRemove={() => {
-                  onRemoveDpadMapping(direction)
-                  setPendingKeys(prev => {
+                pendingAction={pendingAction || null}
+                onActionChange={(assignment) => handleActionChange(direction, assignment)}
+                onActionClear={() => {
+                  setPendingActions(prev => {
                     const newMap = new Map(prev)
                     newMap.delete(direction)
+                    setHasUnsavedChanges(newMap.size > 0)
                     return newMap
                   })
-                  setHasUnsavedChanges(false)
                 }}
-                showRemove={!!dpadMapping || !!pendingKey}
+                onRemove={() => {
+                  onRemoveDpadMapping(direction)
+                  setPendingActions(prev => {
+                    const newMap = new Map(prev)
+                    newMap.delete(direction)
+                    setHasUnsavedChanges(newMap.size > 0)
+                    return newMap
+                  })
+                }}
+                showRemove={!!dpadMapping || !!pendingAction}
               />
               {isActive && <span className="active-indicator">●</span>}
             </div>
@@ -95,22 +104,22 @@ export function DpadMappingPanel({
 
       {editingDpad && (
         <div className="editing-hint">
-          {pendingKeys.get(editingDpad.direction) ? (
-            <div>New key: <strong>{pendingKeys.get(editingDpad.direction)?.label}</strong> (press Apply Changes to save)</div>
+          {pendingActions.get(editingDpad.direction) ? (
+            <div>New action: <strong>{pendingActions.get(editingDpad.direction)?.label}</strong> (press Apply Changes to save)</div>
           ) : (
-            <div>Press a key to map...</div>
+            <div>Choose an action or record a keyboard, mouse, or wheel input...</div>
           )}
         </div>
       )}
       
       <MappingActions
-        hasUnsavedChanges={hasUnsavedChanges && pendingKeys.size > 0}
+        hasUnsavedChanges={hasUnsavedChanges && pendingActions.size > 0}
         onApplyChanges={() => {
-          // Apply all pending keys, not just the currently editing one
-          pendingKeys.forEach((pendingKey, direction) => {
-            onSetDpadMapping(direction, pendingKey.key, pendingKey.label)
+          // Apply all pending actions, not just the currently editing one
+          pendingActions.forEach((pendingAction, direction) => {
+            onSetDpadMapping(direction, pendingAction.key, pendingAction.label, pendingAction.action)
           })
-          setPendingKeys(new Map())
+          setPendingActions(new Map())
           setHasUnsavedChanges(false)
           onSetEditingDpad(null)
         }}
@@ -118,7 +127,7 @@ export function DpadMappingPanel({
         onRemoveMapping={() => {
           if (editingDpad) {
             onRemoveDpadMapping(editingDpad.direction)
-            setPendingKeys(prev => {
+            setPendingActions(prev => {
               const newMap = new Map(prev)
               newMap.delete(editingDpad.direction)
               return newMap
@@ -126,9 +135,8 @@ export function DpadMappingPanel({
             setHasUnsavedChanges(false)
           }
         }}
-        showRemove={editingDpad !== null && (!!mapping?.dpadMappings?.find(m => m.direction === editingDpad.direction) || !!pendingKeys.get(editingDpad.direction))}
+        showRemove={editingDpad !== null && (!!mapping?.dpadMappings?.find(m => m.direction === editingDpad.direction) || !!pendingActions.get(editingDpad.direction))}
       />
     </div>
   )
 }
-

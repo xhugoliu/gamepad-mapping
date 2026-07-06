@@ -326,6 +326,57 @@
   gap: 0.5rem;
 }
 
+.mapping-action-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.mapping-action-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mapping-action-control label {
+  color: #86868b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.mapping-action-control select,
+.mapping-action-control input {
+  border: 1px solid #d1d1d6;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d1d1f;
+  font-size: 0.8125rem;
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+}
+
+.mapping-action-control input[type="number"] {
+  width: 64px;
+}
+
+.layer-action-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.layer-action-display {
+  justify-content: flex-end;
+}
+
+.mapping-unsaved-label {
+  color: #86868b;
+  font-size: 0.75rem;
+}
+
 .direction-mapping.unmapped {
   font-size: 0.8125rem;
   color: #86868b;

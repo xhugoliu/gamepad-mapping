@@ -66,17 +66,33 @@ export function KeyMappingSelector({
       return !!(mappingItem && target instanceof HTMLElement && mappingItem.contains(target))
     }
 
-    const isInteractiveElement = (target: HTMLElement) => (
-      target.tagName === 'BUTTON' ||
-      target.closest('button') !== null ||
-      target.tagName === 'A' ||
-      target.closest('a') !== null ||
-      target.closest('.btn-map') !== null ||
-      target.closest('.btn-revert') !== null ||
-      target.closest('.btn-remove') !== null ||
-      target.closest('.btn-remove-small') !== null ||
-      target.closest('.btn-edit') !== null
-    )
+    const isInteractiveElement = (target: HTMLElement) => {
+      const interactiveTags = new Set([
+        'BUTTON',
+        'A',
+        'INPUT',
+        'LABEL',
+        'OPTION',
+        'SELECT',
+        'TEXTAREA',
+      ])
+
+      return (
+        interactiveTags.has(target.tagName) ||
+        target.closest('button') !== null ||
+        target.closest('a') !== null ||
+        target.closest('input') !== null ||
+        target.closest('label') !== null ||
+        target.closest('select') !== null ||
+        target.closest('textarea') !== null ||
+        target.closest('.btn-map') !== null ||
+        target.closest('.btn-revert') !== null ||
+        target.closest('.btn-remove') !== null ||
+        target.closest('.btn-remove-small') !== null ||
+        target.closest('.btn-edit') !== null ||
+        target.closest('.mapping-action-control') !== null
+      )
+    }
 
     const handleMouseDown = (e: MouseEvent) => {
       if (isEditing && containerRef.current) {

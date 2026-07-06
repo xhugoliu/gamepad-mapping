@@ -112,12 +112,13 @@ function App() {
                   gamepad={selectedGamepad}
                   mapping={selectedMapping}
                   selectedControl={selectedControl}
-                  onSetButtonMapping={(buttonIndex, key, label) =>
+                  onSetButtonMapping={(buttonIndex, key, label, action) =>
                     setButtonMapping(
                       selectedGamepad.index,
                       buttonIndex,
                       key,
-                      label
+                      label,
+                      action
                     )
                   }
                   onSetAxisMapping={(
@@ -130,7 +131,8 @@ function App() {
                     sensitivity,
                     acceleration,
                     invertX,
-                    invertY
+                    invertY,
+                    action
                   ) =>
                     setAxisMapping(
                       selectedGamepad.index,
@@ -143,11 +145,18 @@ function App() {
                       sensitivity,
                       acceleration,
                       invertX,
-                      invertY
+                      invertY,
+                      action
                     )
                   }
-                  onSetDpadMapping={(direction, key, label) =>
-                    setDpadMapping(selectedGamepad.index, direction, key, label)
+                  onSetDpadMapping={(direction, key, label, action) =>
+                    setDpadMapping(
+                      selectedGamepad.index,
+                      direction,
+                      key,
+                      label,
+                      action
+                    )
                   }
                   onRemoveButtonMapping={(buttonIndex) =>
                     removeButtonMapping(selectedGamepad.index, buttonIndex)

@@ -2,10 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { GamepadState } from '../hooks/useGamepad'
 import { GamepadMapping, StickDirection, StickMappingType } from '../hooks/useGamepadMapping'
 import { MappingActions } from './MappingPanel'
-import { KeyMappingSelector } from './KeyMappingSelector'
+import { MappingActionSelector } from './MappingActionSelector'
 import { getStickDirection, getStickAxes } from '../utils/stickDirection'
 import { DIRECTION_LABELS, STICK_DIRECTIONS } from '../constants/directionLabels'
 import { DEFAULT_STICK_THRESHOLD, DEFAULT_STICK_THRESHOLD_PREVIEW } from '../constants/defaults'
+import { MappingAction, MappingActionAssignment } from '../types/mappingAction'
 import './MappingPanel.css'
 
 interface StickHotkeyModeProps {
@@ -13,7 +14,7 @@ interface StickHotkeyModeProps {
   mapping?: GamepadMapping
   stickIndex: number
   editingAxis: { gamepadIndex: number; stickIndex: number; direction: StickDirection } | null
-  onSetAxisMapping: (stickIndex: number, direction: StickDirection, key: string, label: string, threshold: number, type?: StickMappingType, sensitivity?: number, acceleration?: number, invertX?: boolean, invertY?: boolean) => void
+  onSetAxisMapping: (stickIndex: number, direction: StickDirection, key: string, label: string, threshold: number, type?: StickMappingType, sensitivity?: number, acceleration?: number, invertX?: boolean, invertY?: boolean, action?: MappingAction) => void
   onRemoveAxisMapping: (stickIndex: number, direction: StickDirection) => void
   onSetEditingAxis: (value: { gamepadIndex: number; stickIndex: number; direction: StickDirection } | null) => void
   onRemoveAllMappings: (stickIndex: number) => void
@@ -30,9 +31,9 @@ export function StickHotkeyMode({
   onRemoveAllMappings,
 }: StickHotkeyModeProps) {
   const [threshold, setThreshold] = useState(DEFAULT_STICK_THRESHOLD)
-  const [pendingDirectionKeys, setPendingDirectionKeys] = useState<Map<StickDirection, { key: string; label: string }>>(new Map())
+  const [pendingDirectionActions, setPendingDirectionActions] = useState<Map<StickDirection, MappingActionAssignment>>(new Map())
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const originalDirectionMappingsRef = useRef<Map<StickDirection, { key: string; label: string }>>(new Map())
+  const originalDirectionMappingsRef = useRef<Map<StickDirection, MappingActionAssignment>>(new Map())
   const originalThresholdRef = useRef<number>(DEFAULT_STICK_THRESHOLD)
 
   const stickMappings = mapping?.axisMappings.filter(m => m.stickIndex === stickIndex && m.type === 'hotkey') || []
@@ -65,40 +66,42 @@ export function StickHotkeyMode({
     stickMappings.forEach(m => {
       originalDirectionMappingsRef.current.set(m.direction, {
         key: m.key,
-        label: m.label
+        label: m.label,
+        action: m.action
       })
     })
   }, [stickMappings])
 
   // Check for changes
   useEffect(() => {
-    const hasPendingKeys = pendingDirectionKeys.size > 0
+    const hasPendingKeys = pendingDirectionActions.size > 0
     const hasThresholdChanges = Math.abs(threshold - originalThresholdRef.current) > 0.01
     setHasUnsavedChanges(hasPendingKeys || hasThresholdChanges)
-  }, [pendingDirectionKeys, threshold])
+  }, [pendingDirectionActions, threshold])
 
-  const handleKeyPress = useCallback((direction: StickDirection, key: string, label: string) => {
+  const handleActionChange = useCallback((direction: StickDirection, assignment: MappingActionAssignment) => {
     const stickMapping = getStickMapping(direction)
     
     // Store original if not already stored
     if (!originalDirectionMappingsRef.current.has(direction) && stickMapping) {
       originalDirectionMappingsRef.current.set(direction, {
         key: stickMapping.key,
-        label: stickMapping.label
+        label: stickMapping.label,
+        action: stickMapping.action
       })
     }
     
-    // Store pending key
-    setPendingDirectionKeys(prev => {
+    // Store pending action
+    setPendingDirectionActions(prev => {
       const newMap = new Map(prev)
-      newMap.set(direction, { key, label })
+      newMap.set(direction, assignment)
       return newMap
     })
     setHasUnsavedChanges(true)
   }, [getStickMapping])
 
   const revertChanges = useCallback(() => {
-    setPendingDirectionKeys(new Map())
+    setPendingDirectionActions(new Map())
     setThreshold(originalThresholdRef.current)
     setHasUnsavedChanges(false)
   }, [])
@@ -127,21 +130,28 @@ export function StickHotkeyMode({
               }}
             >
               <div className="direction-label">{DIRECTION_LABELS[direction]}</div>
-              <KeyMappingSelector
-                currentMapping={stickMapping ? { key: stickMapping.key, label: stickMapping.label } : null}
+              <MappingActionSelector
+                currentMapping={stickMapping ? { key: stickMapping.key, label: stickMapping.label, action: stickMapping.action } : null}
                 isEditing={editingAxis?.stickIndex === stickIndex && editingAxis?.direction === direction}
-                pendingKey={pendingDirectionKeys.has(direction) ? pendingDirectionKeys.get(direction)! : null}
-                onKeyPress={(key, label) => handleKeyPress(direction, key, label)}
-                onRemove={() => {
-                  onRemoveAxisMapping(stickIndex, direction)
-                  // Remove from pending if exists
-                  setPendingDirectionKeys(prev => {
+                pendingAction={pendingDirectionActions.has(direction) ? pendingDirectionActions.get(direction)! : null}
+                onActionChange={(assignment) => handleActionChange(direction, assignment)}
+                onActionClear={() => {
+                  setPendingDirectionActions(prev => {
                     const newMap = new Map(prev)
                     newMap.delete(direction)
                     return newMap
                   })
                 }}
-                showRemove={!!stickMapping || pendingDirectionKeys.has(direction)}
+                onRemove={() => {
+                  onRemoveAxisMapping(stickIndex, direction)
+                  // Remove from pending if exists
+                  setPendingDirectionActions(prev => {
+                    const newMap = new Map(prev)
+                    newMap.delete(direction)
+                    return newMap
+                  })
+                }}
+                showRemove={!!stickMapping || pendingDirectionActions.has(direction)}
               />
               {isActive && <span className="active-indicator">●</span>}
             </div>
@@ -171,17 +181,17 @@ export function StickHotkeyMode({
         hasUnsavedChanges={hasUnsavedChanges}
         onApplyChanges={() => {
           // Apply all pending direction mappings with global threshold
-          pendingDirectionKeys.forEach((pending, direction) => {
-            onSetAxisMapping(stickIndex, direction, pending.key, pending.label, threshold, 'hotkey', 1.0, 1.0)
+          pendingDirectionActions.forEach((pending, direction) => {
+            onSetAxisMapping(stickIndex, direction, pending.key, pending.label, threshold, 'hotkey', 1.0, 1.0, false, false, pending.action)
           })
           // Update threshold for all existing mappings if it changed
           if (Math.abs(threshold - originalThresholdRef.current) > 0.01) {
             stickMappings.forEach(m => {
-              onSetAxisMapping(stickIndex, m.direction, m.key, m.label, threshold, 'hotkey', 1.0, 1.0)
+              onSetAxisMapping(stickIndex, m.direction, m.key, m.label, threshold, 'hotkey', 1.0, 1.0, false, false, m.action)
             })
           }
           // Clear pending changes
-          setPendingDirectionKeys(new Map())
+          setPendingDirectionActions(new Map())
           setHasUnsavedChanges(false)
           originalThresholdRef.current = threshold
           originalDirectionMappingsRef.current.clear()
@@ -193,10 +203,10 @@ export function StickHotkeyMode({
         onRemoveMapping={() => {
           onRemoveAllMappings(stickIndex)
           setHasUnsavedChanges(false)
-          setPendingDirectionKeys(new Map())
+          setPendingDirectionActions(new Map())
           originalDirectionMappingsRef.current.clear()
         }}
-        showRemove={stickMappings.length > 0 || pendingDirectionKeys.size > 0}
+        showRemove={stickMappings.length > 0 || pendingDirectionActions.size > 0}
       />
     </>
   )
