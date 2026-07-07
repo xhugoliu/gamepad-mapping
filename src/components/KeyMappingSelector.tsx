@@ -1,6 +1,12 @@
-import { useEffect, useRef } from 'react'
-import { createKeyboardShortcut } from '../utils/keyboardShortcut'
-import { getMouseButtonMapping } from '../utils/mouseButtonMapping'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  createInputShortcut,
+  getInputOptionGroup,
+  getInputOptionSelection,
+  INPUT_MODIFIER_OPTIONS,
+  INPUT_OPTION_GROUPS,
+  InputModifierKey,
+} from '../constants/inputOptions'
 import './MappingPanel.css'
 
 interface KeyMappingSelectorProps {
@@ -20,185 +26,150 @@ export function KeyMappingSelector({
   onRemove,
   showRemove = false,
 }: KeyMappingSelectorProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  // Handle key press and mouse button clicks
-  useEffect(() => {
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isEditing) {
-        const target = e.target as HTMLElement | null
-        if (target && isInteractiveElement(target)) {
-          return
-        }
-
-        e.preventDefault()
-
-        const shortcut = createKeyboardShortcut(e)
-        if (shortcut) {
-          onKeyPress(shortcut.key, shortcut.label)
-        }
-      }
-    }
-
-    const getCurrentMappingItem = () =>
-      containerRef.current?.closest('.button-mapping-item')
-
-    const isEventInsideCurrentMappingItem = (target: EventTarget | null) => {
-      const mappingItem = getCurrentMappingItem()
-      return !!(mappingItem && target instanceof HTMLElement && mappingItem.contains(target))
-    }
-
-    const isInteractiveElement = (target: HTMLElement) => {
-      const interactiveTags = new Set([
-        'BUTTON',
-        'A',
-        'INPUT',
-        'LABEL',
-        'OPTION',
-        'SELECT',
-        'TEXTAREA',
-      ])
-
-      return (
-        interactiveTags.has(target.tagName) ||
-        target.closest('button') !== null ||
-        target.closest('a') !== null ||
-        target.closest('input') !== null ||
-        target.closest('label') !== null ||
-        target.closest('select') !== null ||
-        target.closest('textarea') !== null ||
-        target.closest('.btn-map') !== null ||
-        target.closest('.btn-revert') !== null ||
-        target.closest('.btn-remove') !== null ||
-        target.closest('.btn-remove-small') !== null ||
-        target.closest('.btn-edit') !== null ||
-        target.closest('.mapping-action-control') !== null
-      )
-    }
-
-    const handleMouseDown = (e: MouseEvent) => {
-      if (isEditing && containerRef.current) {
-        const target = e.target as HTMLElement
-        if (!isEventInsideCurrentMappingItem(target)) {
-          return
-        }
-
-        // Ignore clicks on interactive elements (buttons, links, etc.)
-        if (isInteractiveElement(target)) {
-          return // Don't capture clicks on buttons/links
-        }
-
-        const mouseButtonMapping = getMouseButtonMapping(e.button)
-        if (!mouseButtonMapping) {
-          return
-        }
-
-        e.preventDefault()
-        e.stopPropagation()
-
-        onKeyPress(mouseButtonMapping.key, mouseButtonMapping.label)
-      }
-    }
-
-    const suppressSideButtonDefault = (e: MouseEvent) => {
-      if (
-        !isEditing ||
-        !containerRef.current ||
-        (e.button !== 3 && e.button !== 4)
-      ) {
-        return
-      }
-
-      const target = e.target as HTMLElement
-      if (!isEventInsideCurrentMappingItem(target) || isInteractiveElement(target)) {
-        return
-      }
-
-      e.preventDefault()
-      e.stopPropagation()
-    }
-
-    const handleWheel = (e: WheelEvent) => {
-      if (!isEditing || !containerRef.current) {
-        return
-      }
-
-      const target = e.target as HTMLElement
-      if (!isEventInsideCurrentMappingItem(target) || isInteractiveElement(target)) {
-        return
-      }
-
-      e.preventDefault()
-      e.stopPropagation()
-
-      let key: string
-      let label: string
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        if (e.deltaX > 0) {
-          key = 'MouseWheelRight'
-          label = 'Wheel Right'
-        } else {
-          key = 'MouseWheelLeft'
-          label = 'Wheel Left'
-        }
-      } else if (e.deltaY > 0) {
-        key = 'MouseWheelDown'
-        label = 'Wheel Down'
-      } else if (e.deltaY < 0) {
-        key = 'MouseWheelUp'
-        label = 'Wheel Up'
-      } else {
-        return
-      }
-
-      onKeyPress(key, label)
-    }
-
-    if (isEditing) {
-      window.addEventListener('keydown', handleKeyDown)
-      window.addEventListener('mousedown', handleMouseDown, true) // Use capture phase
-      window.addEventListener('mouseup', suppressSideButtonDefault, true)
-      window.addEventListener('auxclick', suppressSideButtonDefault, true)
-      window.addEventListener('wheel', handleWheel, { capture: true, passive: false })
-    }
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('mousedown', handleMouseDown, true)
-      window.removeEventListener('mouseup', suppressSideButtonDefault, true)
-      window.removeEventListener('auxclick', suppressSideButtonDefault, true)
-      window.removeEventListener('wheel', handleWheel, true)
-    }
-  }, [isEditing, onKeyPress])
-
   const displayKey = pendingKey || currentMapping
+  const displaySelection = useMemo(
+    () => (displayKey ? getInputOptionSelection(displayKey.key) : null),
+    [displayKey?.key]
+  )
+
+  const [selectedGroupId, setSelectedGroupId] = useState(
+    displaySelection?.groupId ?? INPUT_OPTION_GROUPS[0].id
+  )
+  const [selectedOptionKey, setSelectedOptionKey] = useState(
+    displaySelection?.optionKey ?? ''
+  )
+  const [selectedModifiers, setSelectedModifiers] = useState<InputModifierKey[]>(
+    displaySelection?.modifiers ?? []
+  )
+
+  useEffect(() => {
+    if (!isEditing) {
+      return
+    }
+
+    setSelectedGroupId(displaySelection?.groupId ?? INPUT_OPTION_GROUPS[0].id)
+    setSelectedOptionKey(displaySelection?.optionKey ?? '')
+    setSelectedModifiers(displaySelection?.modifiers ?? [])
+  }, [displaySelection, isEditing])
+
+  const selectedGroup = getInputOptionGroup(selectedGroupId)
+
+  const applySelection = (
+    groupId: string,
+    optionKey: string,
+    modifiers: InputModifierKey[]
+  ) => {
+    const shortcut = createInputShortcut(groupId, optionKey, modifiers)
+    if (shortcut) {
+      onKeyPress(shortcut.key, shortcut.label)
+    }
+  }
+
+  const handleGroupChange = (groupId: string) => {
+    const nextGroup = getInputOptionGroup(groupId)
+    const nextOptionKey = nextGroup.options[0]?.key ?? ''
+    const nextModifiers = nextGroup.allowModifiers ? selectedModifiers : []
+
+    setSelectedGroupId(groupId)
+    setSelectedOptionKey(nextOptionKey)
+    setSelectedModifiers(nextModifiers)
+    applySelection(groupId, nextOptionKey, nextModifiers)
+  }
+
+  const handleOptionChange = (optionKey: string) => {
+    setSelectedOptionKey(optionKey)
+    applySelection(selectedGroupId, optionKey, selectedModifiers)
+  }
+
+  const toggleModifier = (modifier: InputModifierKey) => {
+    const nextModifiers = selectedModifiers.includes(modifier)
+      ? selectedModifiers.filter((selected) => selected !== modifier)
+      : [...selectedModifiers, modifier]
+
+    setSelectedModifiers(nextModifiers)
+    if (selectedOptionKey) {
+      applySelection(selectedGroupId, selectedOptionKey, nextModifiers)
+    }
+  }
 
   return (
-    <div ref={containerRef} className="direction-mapping">
-      {displayKey ? (
-        <>
-          <span className="mapped-key">
-            {displayKey.label}
-          </span>
-          {pendingKey && (
-            <span style={{ fontSize: '0.75em', color: '#888', marginLeft: '4px' }}>(unsaved)</span>
-          )}
-          {showRemove && onRemove && (
-            <button
-              className="btn-remove-small"
-              onClick={(e) => {
-                e.stopPropagation()
-                onRemove()
-              }}
-              title="Remove mapping"
+    <div className="key-mapping-selector">
+      <div className="direction-mapping">
+        {displayKey ? (
+          <>
+            <span className="mapped-key">
+              {displayKey.label}
+            </span>
+            {pendingKey && (
+              <span className="mapping-unsaved-label">(unsaved)</span>
+            )}
+            {showRemove && onRemove && (
+              <button
+                className="btn-remove-small"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemove()
+                }}
+                title="Remove mapping"
+              >
+                ×
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="direction-mapping unmapped">Not mapped</div>
+        )}
+      </div>
+
+      {isEditing && (
+        <div className="input-selection-controls">
+          <div className="mapping-action-control">
+            <label>Category</label>
+            <select
+              value={selectedGroupId}
+              onChange={(event) => handleGroupChange(event.target.value)}
             >
-              ×
-            </button>
+              {INPUT_OPTION_GROUPS.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mapping-action-control">
+            <label>Input</label>
+            <select
+              value={selectedOptionKey}
+              onChange={(event) => handleOptionChange(event.target.value)}
+            >
+              <option value="" disabled>
+                Choose input
+              </option>
+              {selectedGroup.options.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedGroup.allowModifiers && (
+            <div className="input-modifier-controls">
+              <span>Modifiers</span>
+              {INPUT_MODIFIER_OPTIONS.map((modifier) => (
+                <label key={modifier.key}>
+                  <input
+                    type="checkbox"
+                    checked={selectedModifiers.includes(modifier.key)}
+                    onChange={() => toggleModifier(modifier.key)}
+                  />
+                  {modifier.label}
+                </label>
+              ))}
+            </div>
           )}
-        </>
-      ) : (
-        <div className="direction-mapping unmapped">Not mapped</div>
+        </div>
       )}
     </div>
   )

@@ -107,7 +107,7 @@ export function DpadMappingPanel({
           {pendingActions.get(editingDpad.direction) ? (
             <div>New action: <strong>{pendingActions.get(editingDpad.direction)?.label}</strong> (press Apply Changes to save)</div>
           ) : (
-            <div>Choose an action or record a keyboard, mouse, or wheel input...</div>
+            <div>Choose an action and input from the dropdowns...</div>
           )}
         </div>
       )}

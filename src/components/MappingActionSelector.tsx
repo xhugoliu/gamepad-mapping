@@ -292,7 +292,7 @@ export function MappingActionSelector({
               }
             }}
           >
-            <option value="input">Recorded input</option>
+            <option value="input">Input</option>
             <option value="layer">Layer action</option>
             <option value="tap-hold">Tap/Hold</option>
           </select>

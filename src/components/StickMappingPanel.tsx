@@ -220,7 +220,7 @@ export function StickMappingPanel({
                 </div>
               ) : (
                 <div>
-                  Choose an action or record a keyboard, mouse, or wheel input...
+                  Choose an action and input from the dropdowns...
                 </div>
               )}
             </div>

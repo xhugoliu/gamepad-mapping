@@ -331,6 +331,22 @@
   gap: 0.5rem;
 }
 
+.key-mapping-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.input-selection-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  max-width: min(420px, 100%);
+}
+
 .mapping-action-selector {
   display: flex;
   flex-direction: column;
@@ -364,6 +380,31 @@
 
 .mapping-action-control input[type="number"] {
   width: 64px;
+}
+
+.input-modifier-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  color: #86868b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.input-modifier-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #1d1d1f;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.input-modifier-controls input {
+  margin: 0;
 }
 
 .layer-action-controls {

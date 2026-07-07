@@ -94,7 +94,7 @@ export function ButtonMappingPanel({
           {pendingButtonAction ? (
             <div>New mapping: <strong>{pendingButtonAction.label}</strong> (press Apply Changes to save)</div>
           ) : (
-            <div>Choose an action or record a keyboard, mouse, or wheel input...</div>
+            <div>Choose an action and input from the dropdowns...</div>
           )}
         </div>
       )}
