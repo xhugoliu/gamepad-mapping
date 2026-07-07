@@ -211,18 +211,12 @@ export function StickMappingPanel({
             </div>
           </div>
 
-          {isEditingStickButton && (
+          {isEditingStickButton && pendingStickButtonAction && (
             <div className="editing-hint">
-              {pendingStickButtonAction ? (
-                <div>
-                  New mapping: <strong>{pendingStickButtonAction.label}</strong>{" "}
-                  (press Apply Changes to save)
-                </div>
-              ) : (
-                <div>
-                  Choose an action and input from the dropdowns...
-                </div>
-              )}
+              <div>
+                New mapping: <strong>{pendingStickButtonAction.label}</strong>{" "}
+                (press Apply Changes to save)
+              </div>
             </div>
           )}
 

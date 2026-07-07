@@ -16,6 +16,9 @@ interface KeyMappingSelectorProps {
   onKeyPress: (key: string, label: string) => void
   onRemove?: () => void
   showRemove?: boolean
+  categoryId?: string
+  showCategory?: boolean
+  showDisplay?: boolean
 }
 
 export function KeyMappingSelector({
@@ -25,6 +28,9 @@ export function KeyMappingSelector({
   onKeyPress,
   onRemove,
   showRemove = false,
+  categoryId,
+  showCategory = true,
+  showDisplay = true,
 }: KeyMappingSelectorProps) {
   const displayKey = pendingKey || currentMapping
   const displaySelection = useMemo(
@@ -33,13 +39,19 @@ export function KeyMappingSelector({
   )
 
   const [selectedGroupId, setSelectedGroupId] = useState(
-    displaySelection?.groupId ?? INPUT_OPTION_GROUPS[0].id
+    categoryId ?? displaySelection?.groupId ?? INPUT_OPTION_GROUPS[0].id
   )
   const [selectedOptionKey, setSelectedOptionKey] = useState(
-    displaySelection?.optionKey ?? ''
+    displaySelection &&
+      (categoryId === undefined || displaySelection.groupId === categoryId)
+      ? displaySelection.optionKey
+      : ''
   )
   const [selectedModifiers, setSelectedModifiers] = useState<InputModifierKey[]>(
-    displaySelection?.modifiers ?? []
+    displaySelection &&
+      (categoryId === undefined || displaySelection.groupId === categoryId)
+      ? displaySelection.modifiers
+      : []
   )
 
   useEffect(() => {
@@ -47,10 +59,19 @@ export function KeyMappingSelector({
       return
     }
 
-    setSelectedGroupId(displaySelection?.groupId ?? INPUT_OPTION_GROUPS[0].id)
-    setSelectedOptionKey(displaySelection?.optionKey ?? '')
-    setSelectedModifiers(displaySelection?.modifiers ?? [])
-  }, [displaySelection, isEditing])
+    const nextGroupId =
+      categoryId ?? displaySelection?.groupId ?? INPUT_OPTION_GROUPS[0].id
+    const selectionMatchesGroup =
+      displaySelection?.groupId === nextGroupId
+
+    setSelectedGroupId(nextGroupId)
+    setSelectedOptionKey(
+      selectionMatchesGroup ? displaySelection.optionKey : ''
+    )
+    setSelectedModifiers(
+      selectionMatchesGroup ? displaySelection.modifiers : []
+    )
+  }, [categoryId, displaySelection, isEditing])
 
   const selectedGroup = getInputOptionGroup(selectedGroupId)
 
@@ -94,48 +115,52 @@ export function KeyMappingSelector({
 
   return (
     <div className="key-mapping-selector">
-      <div className="direction-mapping">
-        {displayKey ? (
-          <>
-            <span className="mapped-key">
-              {displayKey.label}
-            </span>
-            {pendingKey && (
-              <span className="mapping-unsaved-label">(unsaved)</span>
-            )}
-            {showRemove && onRemove && (
-              <button
-                className="btn-remove-small"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRemove()
-                }}
-                title="Remove mapping"
-              >
-                ×
-              </button>
-            )}
-          </>
-        ) : (
-          <div className="direction-mapping unmapped">Not mapped</div>
-        )}
-      </div>
+      {showDisplay && (
+        <div className="direction-mapping">
+          {displayKey ? (
+            <>
+              <span className="mapped-key">
+                {displayKey.label}
+              </span>
+              {pendingKey && (
+                <span className="mapping-unsaved-label">(unsaved)</span>
+              )}
+              {showRemove && onRemove && (
+                <button
+                  className="btn-remove-small"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRemove()
+                  }}
+                  title="Remove mapping"
+                >
+                  ×
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="direction-mapping unmapped">Not mapped</div>
+          )}
+        </div>
+      )}
 
       {isEditing && (
         <div className="input-selection-controls">
-          <div className="mapping-action-control">
-            <label>Category</label>
-            <select
-              value={selectedGroupId}
-              onChange={(event) => handleGroupChange(event.target.value)}
-            >
-              {INPUT_OPTION_GROUPS.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {showCategory && (
+            <div className="mapping-action-control">
+              <label>Category</label>
+              <select
+                value={selectedGroupId}
+                onChange={(event) => handleGroupChange(event.target.value)}
+              >
+                {INPUT_OPTION_GROUPS.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="mapping-action-control">
             <label>Input</label>
@@ -157,16 +182,18 @@ export function KeyMappingSelector({
           {selectedGroup.allowModifiers && (
             <div className="input-modifier-controls">
               <span>Modifiers</span>
-              {INPUT_MODIFIER_OPTIONS.map((modifier) => (
-                <label key={modifier.key}>
-                  <input
-                    type="checkbox"
-                    checked={selectedModifiers.includes(modifier.key)}
-                    onChange={() => toggleModifier(modifier.key)}
-                  />
-                  {modifier.label}
-                </label>
-              ))}
+              <div className="input-modifier-options">
+                {INPUT_MODIFIER_OPTIONS.map((modifier) => (
+                  <label key={modifier.key}>
+                    <input
+                      type="checkbox"
+                      checked={selectedModifiers.includes(modifier.key)}
+                      onChange={() => toggleModifier(modifier.key)}
+                    />
+                    {modifier.label}
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>

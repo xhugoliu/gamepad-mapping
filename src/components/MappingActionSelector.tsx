@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { KeyMappingSelector } from "./KeyMappingSelector";
 import {
+  getInputOptionSelection,
+  INPUT_OPTION_GROUPS,
+} from "../constants/inputOptions";
+import {
   DEFAULT_TAPPING_TERM_MS,
   MAX_TAPPING_TERM_MS,
   MIN_TAPPING_TERM_MS,
@@ -31,6 +35,11 @@ interface MappingActionSelectorProps {
 }
 
 type EditorMode = "input" | "layer" | "tap-hold";
+type MappingCategoryId = string;
+
+const LAYER_CATEGORY_PREFIX = "layer:";
+const MOD_TAP_CATEGORY_ID = "mod-tap";
+const LAYER_TAP_CATEGORY_ID = "layer-tap";
 
 const layerModes: Array<{ value: LayerActionMode; label: string }> = [
   { value: "momentary", label: "Momentary - MO(layer)" },
@@ -39,9 +48,20 @@ const layerModes: Array<{ value: LayerActionMode; label: string }> = [
   { value: "default", label: "Default - DF(layer)" },
 ];
 
-const tapHoldKinds: Array<{ value: TapHoldKind; label: string }> = [
-  { value: "mod-tap", label: "Mod-Tap - MT(mod, key)" },
-  { value: "layer-tap", label: "Layer-Tap - LT(layer, key)" },
+const mappingCategoryOptions: Array<{
+  value: MappingCategoryId;
+  label: string;
+}> = [
+  ...INPUT_OPTION_GROUPS.map((group) => ({
+    value: group.id,
+    label: group.label,
+  })),
+  ...layerModes.map((mode) => ({
+    value: `${LAYER_CATEGORY_PREFIX}${mode.value}`,
+    label: mode.label,
+  })),
+  { value: MOD_TAP_CATEGORY_ID, label: "Mod-Tap - MT(mod, key)" },
+  { value: LAYER_TAP_CATEGORY_ID, label: "Layer-Tap - LT(layer, key)" },
 ];
 
 const modifierOptions = [
@@ -61,6 +81,41 @@ function getEditorMode(mapping: MappingActionAssignment | null): EditorMode {
   }
 
   return "input";
+}
+
+function getLayerCategoryId(mode: LayerActionMode): MappingCategoryId {
+  return `${LAYER_CATEGORY_PREFIX}${mode}`;
+}
+
+function getLayerModeFromCategoryId(
+  categoryId: MappingCategoryId
+): LayerActionMode | null {
+  const mode = layerModes.find(
+    (option) => getLayerCategoryId(option.value) === categoryId
+  );
+
+  return mode?.value ?? null;
+}
+
+function getCategoryId(mapping: MappingActionAssignment | null): MappingCategoryId {
+  if (mapping?.action?.type === "layer") {
+    return getLayerCategoryId(mapping.action.mode);
+  }
+
+  if (mapping?.action?.type === "tap-hold") {
+    return mapping.action.kind === "layer-tap"
+      ? LAYER_TAP_CATEGORY_ID
+      : MOD_TAP_CATEGORY_ID;
+  }
+
+  if (mapping?.action?.type === "input") {
+    return (
+      getInputOptionSelection(mapping.action.key)?.groupId ??
+      INPUT_OPTION_GROUPS[0].id
+    );
+  }
+
+  return INPUT_OPTION_GROUPS[0].id;
 }
 
 function getLayerMode(mapping: MappingActionAssignment | null): LayerActionMode {
@@ -150,6 +205,7 @@ export function MappingActionSelector({
   const displayEditorState = useMemo(
     () => ({
       mode: getEditorMode(displayMapping),
+      categoryId: getCategoryId(displayMapping),
       layerMode: getLayerMode(displayMapping),
       layerIndex: getLayerIndex(displayMapping),
       tapHoldKind: getTapHoldKind(displayMapping),
@@ -164,6 +220,8 @@ export function MappingActionSelector({
   const [editorMode, setEditorMode] = useState<EditorMode>(
     displayEditorState.mode
   );
+  const [selectedCategoryId, setSelectedCategoryId] =
+    useState<MappingCategoryId>(displayEditorState.categoryId);
   const [layerMode, setLayerMode] = useState<LayerActionMode>(
     displayEditorState.layerMode
   );
@@ -188,6 +246,7 @@ export function MappingActionSelector({
     }
 
     setEditorMode(displayEditorState.mode);
+    setSelectedCategoryId(displayEditorState.categoryId);
     setLayerMode(displayEditorState.layerMode);
     setLayerIndex(displayEditorState.layerIndex);
     setTapHoldKind(displayEditorState.tapHoldKind);
@@ -226,6 +285,40 @@ export function MappingActionSelector({
     onActionChange(createTapHoldAssignment(kind, tap, hold, termMs));
   };
 
+  const handleCategoryChange = (categoryId: MappingCategoryId) => {
+    setSelectedCategoryId(categoryId);
+
+    const nextLayerMode = getLayerModeFromCategoryId(categoryId);
+    if (nextLayerMode) {
+      setEditorMode("layer");
+      setLayerMode(nextLayerMode);
+      applyLayerAction(nextLayerMode, layerIndex);
+      return;
+    }
+
+    if (
+      categoryId === MOD_TAP_CATEGORY_ID ||
+      categoryId === LAYER_TAP_CATEGORY_ID
+    ) {
+      const nextKind: TapHoldKind =
+        categoryId === LAYER_TAP_CATEGORY_ID ? "layer-tap" : "mod-tap";
+
+      setEditorMode("tap-hold");
+      setTapHoldKind(nextKind);
+      applyTapHoldAction(
+        nextKind,
+        tapHoldTap,
+        tapHoldModifierKey,
+        tapHoldLayerIndex,
+        tapHoldTerm
+      );
+      return;
+    }
+
+    setEditorMode("input");
+    onActionClear?.();
+  };
+
   const layerDisplay =
     displayMapping?.action?.type === "layer"
       ? describeMappingAction(displayMapping.action)
@@ -248,10 +341,18 @@ export function MappingActionSelector({
               tapHoldTerm
             ).action
           )
-        : "Tap/Hold";
+        : tapHoldKind === "layer-tap"
+          ? "Layer-Tap"
+          : "Mod-Tap";
+  const showTapHoldDisplay =
+    !isEditing || displayMapping?.action?.type === "tap-hold" || !!tapHoldTap;
 
+  const displayInputCategoryId =
+    displayMapping?.action.type === "input" ? getCategoryId(displayMapping) : null;
   const currentInputMapping =
-    displayMapping && displayMapping.action.type === "input"
+    displayMapping &&
+    displayMapping.action.type === "input" &&
+    (!isEditing || selectedCategoryId === displayInputCategoryId)
       ? {
           key: displayMapping.action.key,
           label: displayMapping.action.label,
@@ -270,31 +371,18 @@ export function MappingActionSelector({
     <div className="mapping-action-selector">
       {isEditing && (
         <div className="mapping-action-control">
-          <label>Action</label>
+          <label>Category</label>
           <select
-            value={editorMode}
-            onChange={(event) => {
-              const nextMode = event.target.value as EditorMode;
-              setEditorMode(nextMode);
-
-              if (nextMode === "layer") {
-                applyLayerAction(layerMode, layerIndex);
-              } else if (nextMode === "tap-hold") {
-                applyTapHoldAction(
-                  tapHoldKind,
-                  tapHoldTap,
-                  tapHoldModifierKey,
-                  tapHoldLayerIndex,
-                  tapHoldTerm
-                );
-              } else {
-                onActionClear?.();
-              }
-            }}
+            value={selectedCategoryId}
+            onChange={(event) =>
+              handleCategoryChange(event.target.value as MappingCategoryId)
+            }
           >
-            <option value="input">Input</option>
-            <option value="layer">Layer action</option>
-            <option value="tap-hold">Tap/Hold</option>
+            {mappingCategoryOptions.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.label}
+              </option>
+            ))}
           </select>
         </div>
       )}
@@ -323,24 +411,6 @@ export function MappingActionSelector({
           {isEditing && (
             <div className="layer-action-controls">
               <div className="mapping-action-control">
-                <label>Mode</label>
-                <select
-                  value={layerMode}
-                  onChange={(event) => {
-                    const nextMode = event.target.value as LayerActionMode;
-                    setLayerMode(nextMode);
-                    applyLayerAction(nextMode, layerIndex);
-                  }}
-                >
-                  {layerModes.map((mode) => (
-                    <option key={mode.value} value={mode.value}>
-                      {mode.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mapping-action-control">
                 <label>Layer</label>
                 <input
                   type="number"
@@ -359,52 +429,30 @@ export function MappingActionSelector({
         </>
       ) : editorMode === "tap-hold" ? (
         <>
-          <div className="direction-mapping layer-action-display tap-hold-display">
-            <span className="mapped-key">{tapHoldDisplay}</span>
-            {pendingAction && (
-              <span className="mapping-unsaved-label">(unsaved)</span>
-            )}
-            {showRemove && onRemove && (
-              <button
-                className="btn-remove-small"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRemove();
-                }}
-                title="Remove mapping"
-              >
-                x
-              </button>
-            )}
-          </div>
+          {showTapHoldDisplay && (
+            <div className="direction-mapping layer-action-display tap-hold-display">
+              <span className="mapped-key">{tapHoldDisplay}</span>
+              {pendingAction && (
+                <span className="mapping-unsaved-label">(unsaved)</span>
+              )}
+              {showRemove && onRemove && (
+                <button
+                  className="btn-remove-small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemove();
+                  }}
+                  title="Remove mapping"
+                >
+                  x
+                </button>
+              )}
+            </div>
+          )}
 
           {isEditing && (
             <div className="tap-hold-action-controls">
-              <div className="mapping-action-control">
-                <label>Type</label>
-                <select
-                  value={tapHoldKind}
-                  onChange={(event) => {
-                    const nextKind = event.target.value as TapHoldKind;
-                    setTapHoldKind(nextKind);
-                    applyTapHoldAction(
-                      nextKind,
-                      tapHoldTap,
-                      tapHoldModifierKey,
-                      tapHoldLayerIndex,
-                      tapHoldTerm
-                    );
-                  }}
-                >
-                  {tapHoldKinds.map((kind) => (
-                    <option key={kind.value} value={kind.value}>
-                      {kind.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="button-mapping-item editing tap-hold-tap-row">
+              <div className="tap-hold-tap-row">
                 <div className="direction-label">Tap</div>
                 <KeyMappingSelector
                   currentMapping={tapHoldTap}
@@ -422,6 +470,7 @@ export function MappingActionSelector({
                     );
                   }}
                   showRemove={false}
+                  showDisplay={false}
                 />
               </div>
 
@@ -502,6 +551,9 @@ export function MappingActionSelector({
           currentMapping={currentInputMapping}
           isEditing={isEditing}
           pendingKey={pendingInputMapping}
+          categoryId={selectedCategoryId}
+          showCategory={false}
+          showDisplay={!isEditing || !!currentInputMapping || !!pendingInputMapping}
           onKeyPress={(key, label) => {
             onActionChange(createInputAssignment(key, label));
           }}

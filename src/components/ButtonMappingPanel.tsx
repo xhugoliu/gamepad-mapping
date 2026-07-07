@@ -89,13 +89,9 @@ export function ButtonMappingPanel({
         </div>
       </div>
 
-      {isEditing && (
+      {isEditing && pendingButtonAction && (
         <div className="editing-hint">
-          {pendingButtonAction ? (
-            <div>New mapping: <strong>{pendingButtonAction.label}</strong> (press Apply Changes to save)</div>
-          ) : (
-            <div>Choose an action and input from the dropdowns...</div>
-          )}
+          <div>New mapping: <strong>{pendingButtonAction.label}</strong> (press Apply Changes to save)</div>
         </div>
       )}
       

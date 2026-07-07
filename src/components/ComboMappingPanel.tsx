@@ -274,7 +274,7 @@ export function ComboMappingPanel({
           {pendingInputs.length >= 2 && (
             <>
               <div className="button-mapping-item editing combo-action-row">
-                <div className="direction-label">Action</div>
+                <div className="direction-label">Output</div>
                 <MappingActionSelector
                   currentMapping={null}
                   isEditing

@@ -102,13 +102,9 @@ export function DpadMappingPanel({
         })}
       </div>
 
-      {editingDpad && (
+      {editingDpad && pendingActions.get(editingDpad.direction) && (
         <div className="editing-hint">
-          {pendingActions.get(editingDpad.direction) ? (
-            <div>New action: <strong>{pendingActions.get(editingDpad.direction)?.label}</strong> (press Apply Changes to save)</div>
-          ) : (
-            <div>Choose an action and input from the dropdowns...</div>
-          )}
+          <div>New mapping: <strong>{pendingActions.get(editingDpad.direction)?.label}</strong> (press Apply Changes to save)</div>
         </div>
       )}
       
