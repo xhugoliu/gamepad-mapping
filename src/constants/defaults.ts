@@ -30,6 +30,7 @@ export const DEFAULT_SCROLL_SENSITIVITY = 1.0
 export const DEFAULT_SCROLL_ACCELERATION = 1.0
 export const DEFAULT_SCROLL_INVERT_X = false
 export const DEFAULT_SCROLL_INVERT_Y = false
+export const MAX_SCROLL_SENSITIVITY = 30.0
 
 // Button detection defaults
 export const DEFAULT_DRIFT_THRESHOLD = 0.1
