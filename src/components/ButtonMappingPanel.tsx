@@ -2,8 +2,9 @@ import { useState, useCallback } from 'react'
 import { GamepadState } from '../hooks/useGamepad'
 import { GamepadMapping } from '../hooks/useGamepadMapping'
 import { MappingActions } from './MappingPanel'
-import { KeyMappingSelector } from './KeyMappingSelector'
+import { MappingActionSelector } from './MappingActionSelector'
 import { getButtonConfig } from '../constants/controllerMappings'
+import { MappingAction, MappingActionAssignment } from '../types/mappingAction'
 import './MappingPanel.css'
 
 interface ButtonMappingPanelProps {
@@ -11,7 +12,7 @@ interface ButtonMappingPanelProps {
   mapping?: GamepadMapping
   buttonIndex: number
   editingButton: { gamepadIndex: number; buttonIndex: number } | null
-  onSetButtonMapping: (buttonIndex: number, key: string, label: string) => void
+  onSetButtonMapping: (buttonIndex: number, key: string, label: string, action?: MappingAction) => void
   onRemoveButtonMapping: (buttonIndex: number) => void
   onSetEditingButton: (value: { gamepadIndex: number; buttonIndex: number } | null) => void
 }
@@ -25,20 +26,20 @@ export function ButtonMappingPanel({
   onRemoveButtonMapping,
   onSetEditingButton,
 }: ButtonMappingPanelProps) {
-  const [pendingButtonKey, setPendingButtonKey] = useState<{ key: string; label: string } | null>(null)
+  const [pendingButtonAction, setPendingButtonAction] = useState<MappingActionAssignment | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   const button = gamepad.buttons[buttonIndex]
   const btnMapping = mapping?.buttonMappings.find(m => m.buttonIndex === buttonIndex)
   const isEditing = editingButton?.buttonIndex === buttonIndex
 
-  const handleKeyPress = useCallback((key: string, label: string) => {
-    setPendingButtonKey({ key, label })
+  const handleActionChange = useCallback((assignment: MappingActionAssignment) => {
+    setPendingButtonAction(assignment)
     setHasUnsavedChanges(true)
   }, [])
 
   const revertChanges = useCallback(() => {
-    setPendingButtonKey(null)
+    setPendingButtonAction(null)
     setHasUnsavedChanges(false)
     onSetEditingButton(null)
   }, [onSetEditingButton])
@@ -61,46 +62,46 @@ export function ButtonMappingPanel({
           onClick={() => {
             // Don't clear pending changes if we're already editing (to prevent clearing mouse click mappings)
             if (!isEditing) {
-              setPendingButtonKey(null)
+              setPendingButtonAction(null)
               setHasUnsavedChanges(false)
               onSetEditingButton({ gamepadIndex: gamepad.index, buttonIndex })
             }
           }}
         >
           <div className="direction-label">{getButtonLabel(buttonIndex)}</div>
-          <KeyMappingSelector
-            currentMapping={btnMapping ? { key: btnMapping.key, label: btnMapping.label } : null}
+          <MappingActionSelector
+            currentMapping={btnMapping ? { key: btnMapping.key, label: btnMapping.label, action: btnMapping.action } : null}
             isEditing={isEditing}
-            pendingKey={pendingButtonKey}
-            onKeyPress={handleKeyPress}
+            pendingAction={pendingButtonAction}
+            onActionChange={handleActionChange}
+            onActionClear={() => {
+              setPendingButtonAction(null)
+              setHasUnsavedChanges(false)
+            }}
             onRemove={() => {
               onRemoveButtonMapping(buttonIndex)
               setHasUnsavedChanges(false)
-              setPendingButtonKey(null)
+              setPendingButtonAction(null)
             }}
-            showRemove={!!btnMapping || !!pendingButtonKey}
+            showRemove={!!btnMapping || !!pendingButtonAction}
           />
           {button?.pressed && <span className="active-indicator">●</span>}
         </div>
       </div>
 
-      {isEditing && (
+      {isEditing && pendingButtonAction && (
         <div className="editing-hint">
-          {pendingButtonKey ? (
-            <div>New mapping: <strong>{pendingButtonKey.label}</strong> (press Apply Changes to save)</div>
-          ) : (
-            <div>Press a keyboard key or click a mouse button to map...</div>
-          )}
+          <div>New mapping: <strong>{pendingButtonAction.label}</strong> (press Apply Changes to save)</div>
         </div>
       )}
       
       <MappingActions
         hasUnsavedChanges={hasUnsavedChanges && isEditing}
         onApplyChanges={() => {
-          if (pendingButtonKey) {
-            onSetButtonMapping(buttonIndex, pendingButtonKey.key, pendingButtonKey.label)
+          if (pendingButtonAction) {
+            onSetButtonMapping(buttonIndex, pendingButtonAction.key, pendingButtonAction.label, pendingButtonAction.action)
           }
-          setPendingButtonKey(null)
+          setPendingButtonAction(null)
           setHasUnsavedChanges(false)
           onSetEditingButton(null)
         }}
@@ -108,11 +109,10 @@ export function ButtonMappingPanel({
         onRemoveMapping={() => {
           onRemoveButtonMapping(buttonIndex)
           setHasUnsavedChanges(false)
-          setPendingButtonKey(null)
+          setPendingButtonAction(null)
         }}
-        showRemove={!!btnMapping || !!pendingButtonKey}
+        showRemove={!!btnMapping || !!pendingButtonAction}
       />
     </div>
   )
 }
-

@@ -1,12 +1,15 @@
 import { GamepadState } from "../hooks/useGamepad";
 import {
   GamepadMapping,
+  ComboMapping,
   StickDirection,
   StickMappingType,
 } from "../hooks/useGamepadMapping";
+import { MappingAction } from "../types/mappingAction";
 import { ButtonMappingPanel } from "./ButtonMappingPanel";
 import { StickMappingPanel } from "./StickMappingPanel";
 import { DpadMappingPanel } from "./DpadMappingPanel";
+import { ComboMappingPanel } from "./ComboMappingPanel";
 import { SelectedControl } from "./ControllerVisualization";
 import { getButtonConfig } from "../constants/controllerMappings";
 import { DIRECTION_LABELS } from "../constants/directionLabels";
@@ -16,7 +19,12 @@ interface MappingPanelProps {
   gamepad: GamepadState;
   mapping?: GamepadMapping;
   selectedControl: SelectedControl;
-  onSetButtonMapping: (buttonIndex: number, key: string, label: string) => void;
+  onSetButtonMapping: (
+    buttonIndex: number,
+    key: string,
+    label: string,
+    action?: MappingAction
+  ) => void;
   onSetAxisMapping: (
     stickIndex: number,
     direction: StickDirection,
@@ -27,16 +35,21 @@ interface MappingPanelProps {
     sensitivity?: number,
     acceleration?: number,
     invertX?: boolean,
-    invertY?: boolean
+    invertY?: boolean,
+    action?: MappingAction,
+    directionGapDegrees?: number
   ) => void;
   onSetDpadMapping: (
     direction: StickDirection,
     key: string,
-    label: string
+    label: string,
+    action?: MappingAction
   ) => void;
+  onSetComboMapping: (comboMapping: ComboMapping) => void;
   onRemoveButtonMapping: (buttonIndex: number) => void;
   onRemoveAxisMapping: (stickIndex: number, direction: StickDirection) => void;
   onRemoveDpadMapping: (direction: StickDirection) => void;
+  onRemoveComboMapping: (comboId: string) => void;
   editingButton: { gamepadIndex: number; buttonIndex: number } | null;
   editingAxis: {
     gamepadIndex: number;
@@ -103,9 +116,11 @@ export function MappingPanel({
   onSetButtonMapping,
   onSetAxisMapping,
   onSetDpadMapping,
+  onSetComboMapping,
   onRemoveButtonMapping,
   onRemoveAxisMapping,
   onRemoveDpadMapping,
+  onRemoveComboMapping,
   editingButton,
   editingAxis,
   editingDpad,
@@ -122,6 +137,7 @@ export function MappingPanel({
   if (!selectedControl) {
     const buttonMappings = mapping?.buttonMappings || [];
     const axisMappings = mapping?.axisMappings || [];
+    const comboMappings = mapping?.comboMappings || [];
 
     return (
       <div className="mapping-panel-content">
@@ -222,8 +238,16 @@ export function MappingPanel({
           </div>
         )}
 
+        <ComboMappingPanel
+          gamepad={gamepad}
+          comboMappings={comboMappings}
+          onSetComboMapping={onSetComboMapping}
+          onRemoveComboMapping={onRemoveComboMapping}
+        />
+
         {buttonMappings.length === 0 &&
           axisMappings.length === 0 &&
+          comboMappings.length === 0 &&
           (!mapping?.dpadMappings || mapping.dpadMappings.length === 0) && (
             <div className="no-mappings">
               <p>

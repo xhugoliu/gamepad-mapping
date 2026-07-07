@@ -155,6 +155,11 @@
   background: #0040b3;
 }
 
+.btn-edit:disabled {
+  background: #c7c7cc;
+  cursor: not-allowed;
+}
+
 .btn-remove {
   background: #ff3b30;
   color: #fff;
@@ -308,9 +313,20 @@
 }
 
 .button-mapping-item.editing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   border-color: #007aff;
   box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
   background: #e5f4ff;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.button-mapping-item.editing > .direction-label {
+  flex: none;
+  min-width: 0;
+  padding: 0;
+  width: 100%;
 }
 
 .direction-label {
@@ -324,6 +340,222 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.key-mapping-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.input-selection-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  max-width: min(420px, 100%);
+}
+
+.mapping-action-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.button-mapping-item.editing .mapping-action-selector {
+  align-items: stretch;
+  justify-self: stretch;
+  width: 100%;
+  max-width: none;
+}
+
+.button-mapping-item.editing .mapping-action-selector .key-mapping-selector {
+  align-items: stretch;
+  width: 100%;
+}
+
+.button-mapping-item.editing .mapping-action-selector .input-selection-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-content: stretch;
+  gap: 0.5rem;
+  max-width: none;
+  width: 100%;
+}
+
+.button-mapping-item.editing .mapping-action-selector .mapping-action-control {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.button-mapping-item.editing .mapping-action-selector .mapping-action-control label {
+  text-align: left;
+}
+
+.button-mapping-item.editing .mapping-action-selector .mapping-action-control select,
+.button-mapping-item.editing .mapping-action-selector .mapping-action-control input:not([type="checkbox"]):not([type="range"]) {
+  min-width: 0;
+  width: 100%;
+}
+
+.button-mapping-item.editing .mapping-action-selector .input-modifier-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.button-mapping-item.editing .mapping-action-selector .input-modifier-controls > span {
+  text-align: left;
+}
+
+.button-mapping-item.editing .mapping-action-selector .input-modifier-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.mapping-action-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mapping-action-control label {
+  color: #86868b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.mapping-action-control select,
+.mapping-action-control input {
+  border: 1px solid #d1d1d6;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d1d1f;
+  font-size: 0.8125rem;
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+}
+
+.mapping-action-control input[type="number"] {
+  width: 64px;
+}
+
+.input-modifier-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  color: #86868b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.input-modifier-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #1d1d1f;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.input-modifier-controls input {
+  margin: 0;
+}
+
+.input-modifier-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.layer-action-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.layer-action-display {
+  justify-content: flex-end;
+}
+
+.tap-hold-display .mapped-key {
+  white-space: nowrap;
+}
+
+.tap-hold-action-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.625rem;
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+}
+
+.tap-hold-action-controls .mapping-action-control {
+  justify-content: stretch;
+}
+
+.tap-hold-action-controls .mapping-action-control select,
+.tap-hold-action-controls .mapping-action-control input {
+  min-width: 0;
+}
+
+.tap-hold-tap-row {
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+  padding: 0.125rem 0 0.25rem;
+  gap: 0.5rem;
+}
+
+.tap-hold-tap-row > .direction-label {
+  min-width: 0;
+  padding: 0;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  text-align: left;
+  color: #86868b;
+}
+
+.tap-hold-term-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.125rem;
+}
+
+.tap-hold-term-control label {
+  grid-column: 1 / -1;
+  min-width: 0;
+  text-align: left;
+}
+
+.tap-hold-term-control input[type="range"] {
+  min-width: 0;
+  width: 100%;
+}
+
+.mapping-unsaved-label {
+  color: #86868b;
+  font-size: 0.75rem;
 }
 
 .direction-mapping.unmapped {
@@ -502,4 +734,70 @@
   margin: 0;
   font-size: 0.875rem;
   line-height: 1.5;
+}
+
+.combo-mapping-section {
+  padding-top: 0.5rem;
+}
+
+.combo-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.combo-section-header .mappings-section-title {
+  margin-bottom: 0;
+}
+
+.combo-add-button {
+  flex: 0 0 auto;
+  min-width: 104px;
+  padding: 0.5rem 0.75rem;
+}
+
+.combo-mapping-item {
+  align-items: flex-start;
+}
+
+.combo-term-label {
+  color: #86868b;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.combo-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.combo-input-selectors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.combo-input-selector {
+  flex: 1 1 160px;
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.combo-input-selector select {
+  width: 100%;
+}
+
+.combo-validation-label {
+  color: #ff3b30;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.combo-action-row {
+  cursor: default;
 }

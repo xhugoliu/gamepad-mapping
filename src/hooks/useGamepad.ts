@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DEFAULT_DRIFT_THRESHOLD } from "../constants/defaults";
 
 export interface GamepadButton {
   pressed: boolean;
@@ -12,6 +13,54 @@ export interface GamepadState {
   buttons: GamepadButton[];
   axes: number[];
   connected: boolean;
+}
+
+const VALUE_EPSILON = 0.001;
+
+function areValuesEqual(a: number, b: number) {
+  return Math.abs(a - b) <= VALUE_EPSILON;
+}
+
+function areGamepadStatesEqual(
+  previousGamepads: GamepadState[],
+  nextGamepads: GamepadState[]
+) {
+  if (previousGamepads.length !== nextGamepads.length) {
+    return false;
+  }
+
+  return previousGamepads.every((previousGamepad, index) => {
+    const nextGamepad = nextGamepads[index];
+    if (
+      !nextGamepad ||
+      previousGamepad.index !== nextGamepad.index ||
+      previousGamepad.id !== nextGamepad.id ||
+      previousGamepad.mapping !== nextGamepad.mapping ||
+      previousGamepad.connected !== nextGamepad.connected ||
+      previousGamepad.buttons.length !== nextGamepad.buttons.length ||
+      previousGamepad.axes.length !== nextGamepad.axes.length
+    ) {
+      return false;
+    }
+
+    const buttonsEqual = previousGamepad.buttons.every(
+      (previousButton, buttonIndex) => {
+        const nextButton = nextGamepad.buttons[buttonIndex];
+        return (
+          previousButton.pressed === nextButton.pressed &&
+          areValuesEqual(previousButton.value, nextButton.value)
+        );
+      }
+    );
+
+    if (!buttonsEqual) {
+      return false;
+    }
+
+    return previousGamepad.axes.every((previousAxis, axisIndex) =>
+      areValuesEqual(previousAxis, nextGamepad.axes[axisIndex])
+    );
+  });
 }
 
 export function useGamepad() {
@@ -29,11 +78,19 @@ export function useGamepad() {
           index: gamepad.index,
           id: gamepad.id,
           mapping: gamepad.mapping,
-          buttons: Array.from(gamepad.buttons).map((btn) => ({
-            pressed: btn.pressed || btn.touched,
-            value: btn.value,
-          })),
-          axes: Array.from(gamepad.axes),
+          buttons: Array.from(gamepad.buttons).map((btn) => {
+            const pressed = btn.pressed || btn.touched;
+            return {
+              pressed,
+              value:
+                pressed || Math.abs(btn.value) > DEFAULT_DRIFT_THRESHOLD
+                  ? btn.value
+                  : 0,
+            };
+          }),
+          axes: Array.from(gamepad.axes).map((axis) =>
+            Math.abs(axis) > DEFAULT_DRIFT_THRESHOLD ? axis : 0
+          ),
           connected: gamepad.connected,
         });
       }
@@ -42,9 +99,19 @@ export function useGamepad() {
     return connectedGamepads;
   }, []);
 
+  const publishGamepads = useCallback((nextGamepads: GamepadState[]) => {
+    setGamepads((previousGamepads) => {
+      if (areGamepadStatesEqual(previousGamepads, nextGamepads)) {
+        return previousGamepads;
+      }
+
+      return nextGamepads;
+    });
+  }, []);
+
   const updateGamepads = useCallback(() => {
-    setGamepads(pollGamepads());
-  }, [pollGamepads]);
+    publishGamepads(pollGamepads());
+  }, [pollGamepads, publishGamepads]);
 
   useEffect(() => {
     const handleGamepadConnected = (e: GamepadEvent) => {
@@ -62,7 +129,7 @@ export function useGamepad() {
 
     // Listen for gamepad updates from main process (works even when window doesn't have focus)
     const handleGamepadUpdate = (_event: unknown, gamepads: GamepadState[]) => {
-      setGamepads(gamepads);
+      publishGamepads(gamepads);
     };
 
     // Listen for poll requests from main process
@@ -74,8 +141,7 @@ export function useGamepad() {
         window.ipcRenderer.send("gamepad-data", connectedGamepads);
       }
 
-      // Also update local state
-      setGamepads(connectedGamepads);
+      // Main process rebroadcasts this as gamepad-update; keep state writes in one path.
     };
 
     if (window.ipcRenderer) {
@@ -83,10 +149,12 @@ export function useGamepad() {
       window.ipcRenderer.on("gamepad-update", handleGamepadUpdate);
     }
 
-    // Also poll locally as fallback (in case IPC communication fails)
-    const intervalId = setInterval(() => {
-      updateGamepads();
-    }, 16);
+    // Also poll locally as fallback when IPC communication is unavailable.
+    const intervalId = !window.ipcRenderer
+      ? window.setInterval(() => {
+          updateGamepads();
+        }, 16)
+      : undefined;
 
     return () => {
       window.removeEventListener("gamepadconnected", handleGamepadConnected);
@@ -98,9 +166,11 @@ export function useGamepad() {
         window.ipcRenderer.off("poll-gamepads", handlePollRequest);
         window.ipcRenderer.off("gamepad-update", handleGamepadUpdate);
       }
-      clearInterval(intervalId);
+      if (intervalId !== undefined) {
+        window.clearInterval(intervalId);
+      }
     };
-  }, [updateGamepads, pollGamepads]);
+  }, [updateGamepads, pollGamepads, publishGamepads]);
 
   return gamepads;
 }

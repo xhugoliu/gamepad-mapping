@@ -7,6 +7,9 @@ import {
   DEFAULT_SCROLL_ACCELERATION,
   DEFAULT_SCROLL_INVERT_X,
   DEFAULT_SCROLL_INVERT_Y,
+  MAX_SCROLL_SENSITIVITY,
+  MIN_SENSITIVITY,
+  SENSITIVITY_STEP,
 } from '../constants/defaults'
 import './MappingPanel.css'
 
@@ -133,9 +136,9 @@ export function StickScrollMode({
         <label>Speed:</label>
         <input
           type="range"
-          min="0.1"
-          max="10.0"
-          step="0.1"
+          min={MIN_SENSITIVITY}
+          max={MAX_SCROLL_SENSITIVITY}
+          step={SENSITIVITY_STEP}
           value={sensitivity}
           onChange={(e) => setSensitivity(parseFloat(e.target.value))}
         />

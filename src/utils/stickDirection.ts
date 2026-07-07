@@ -1,4 +1,27 @@
-import { StickDirection } from '../hooks/useGamepadMapping'
+import type { StickDirection } from '../hooks/useGamepadMapping'
+import { DEFAULT_STICK_DIRECTION_GAP_DEGREES } from '../constants/defaults'
+
+const DIRECTION_ANGLE_STEP_DEGREES = 45
+const DIRECTION_HALF_SECTOR_DEGREES = DIRECTION_ANGLE_STEP_DEGREES / 2
+const DIRECTION_BY_ANGLE: StickDirection[] = [
+  'right',
+  'down-right',
+  'down',
+  'down-left',
+  'left',
+  'up-left',
+  'up',
+  'up-right',
+]
+
+function normalizeAngleDegrees(angle: number) {
+  return (angle + 360) % 360
+}
+
+function getAngleDistanceDegrees(angle: number, center: number) {
+  const distance = Math.abs(angle - center) % 360
+  return distance > 180 ? 360 - distance : distance
+}
 
 /**
  * Calculate stick direction from X and Y axes values
@@ -10,7 +33,8 @@ import { StickDirection } from '../hooks/useGamepadMapping'
 export function getStickDirection(
   x: number,
   y: number,
-  threshold: number
+  threshold: number,
+  directionGapDegrees: number = DEFAULT_STICK_DIRECTION_GAP_DEGREES
 ): StickDirection | null {
   const absX = Math.abs(x)
   const absY = Math.abs(y)
@@ -19,21 +43,22 @@ export function getStickDirection(
     return null // No direction
   }
 
-  const isUp = y < -threshold
-  const isDown = y > threshold
-  const isLeft = x < -threshold
-  const isRight = x > threshold
+  const angle = normalizeAngleDegrees((Math.atan2(y, x) * 180) / Math.PI)
+  const directionIndex =
+    Math.round(angle / DIRECTION_ANGLE_STEP_DEGREES) %
+    DIRECTION_BY_ANGLE.length
+  const directionCenter = directionIndex * DIRECTION_ANGLE_STEP_DEGREES
+  const gap = Math.min(
+    DIRECTION_ANGLE_STEP_DEGREES,
+    Math.max(0, directionGapDegrees)
+  )
+  const activeHalfSector = DIRECTION_HALF_SECTOR_DEGREES - gap / 2
 
-  if (isUp && isLeft) return 'up-left'
-  if (isUp && isRight) return 'up-right'
-  if (isDown && isLeft) return 'down-left'
-  if (isDown && isRight) return 'down-right'
-  if (isUp) return 'up'
-  if (isDown) return 'down'
-  if (isLeft) return 'left'
-  if (isRight) return 'right'
+  if (getAngleDistanceDegrees(angle, directionCenter) > activeHalfSector) {
+    return null
+  }
 
-  return null
+  return DIRECTION_BY_ANGLE[directionIndex]
 }
 
 /**
@@ -71,4 +96,3 @@ export function getStickAxes(stickIndex: number): { axisXIndex: number; axisYInd
     return { axisXIndex: 2, axisYIndex: 3 }
   }
 }
-
