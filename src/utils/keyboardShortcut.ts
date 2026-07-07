@@ -38,6 +38,48 @@ const CODE_TO_KEY_PART: Record<string, string> = {
   Slash: "/",
 };
 
+const NUMPAD_CODE_TO_KEY_PART: Record<string, string> = {
+  Numpad0: "Numpad0",
+  Numpad1: "Numpad1",
+  Numpad2: "Numpad2",
+  Numpad3: "Numpad3",
+  Numpad4: "Numpad4",
+  Numpad5: "Numpad5",
+  Numpad6: "Numpad6",
+  Numpad7: "Numpad7",
+  Numpad8: "Numpad8",
+  Numpad9: "Numpad9",
+  NumpadAdd: "NumpadAdd",
+  NumpadComma: "NumpadComma",
+  NumpadDecimal: "NumpadDecimal",
+  NumpadDivide: "NumpadDivide",
+  NumpadEnter: "NumpadEnter",
+  NumpadEqual: "NumpadEqual",
+  NumpadMultiply: "NumpadMultiply",
+  NumpadSubtract: "NumpadSubtract",
+};
+
+const KEY_PART_LABELS: Record<string, string> = {
+  Numpad0: "NUM 0",
+  Numpad1: "NUM 1",
+  Numpad2: "NUM 2",
+  Numpad3: "NUM 3",
+  Numpad4: "NUM 4",
+  Numpad5: "NUM 5",
+  Numpad6: "NUM 6",
+  Numpad7: "NUM 7",
+  Numpad8: "NUM 8",
+  Numpad9: "NUM 9",
+  NumpadAdd: "NUM +",
+  NumpadComma: "NUM ,",
+  NumpadDecimal: "NUM .",
+  NumpadDivide: "NUM /",
+  NumpadEnter: "NUM ENTER",
+  NumpadEqual: "NUM =",
+  NumpadMultiply: "NUM *",
+  NumpadSubtract: "NUM -",
+};
+
 const MODIFIER_PRIORITY: Record<string, number> = {
   Control: 1,
   Alt: 2,
@@ -46,6 +88,10 @@ const MODIFIER_PRIORITY: Record<string, number> = {
 };
 
 function getKeyPartFromCode(code: string) {
+  if (NUMPAD_CODE_TO_KEY_PART[code]) {
+    return NUMPAD_CODE_TO_KEY_PART[code];
+  }
+
   if (/^Key[A-Z]$/.test(code)) {
     return code.slice(3).toLowerCase();
   }
@@ -100,7 +146,7 @@ function sortShortcutParts(parts: string[]) {
 
 function formatShortcutLabel(parts: string[]) {
   return parts
-    .map((part) => MODIFIER_LABELS[part] ?? part.toUpperCase())
+    .map((part) => MODIFIER_LABELS[part] ?? KEY_PART_LABELS[part] ?? part.toUpperCase())
     .join("+");
 }
 

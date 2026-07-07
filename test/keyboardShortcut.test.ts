@@ -51,6 +51,32 @@ describe("createKeyboardShortcut", () => {
       )
     ).toEqual({ key: "Control+/", label: "CTRL+/" });
   });
+
+  it("records high function keys", () => {
+    expect(
+      createKeyboardShortcut(keyboardEvent({ code: "F18", key: "F18" }))
+    ).toEqual({ key: "F18", label: "F18" });
+  });
+
+  it("records numpad keys separately from main keyboard keys", () => {
+    expect(
+      createKeyboardShortcut(keyboardEvent({ code: "Enter", key: "Enter" }))
+    ).toEqual({ key: "Enter", label: "ENTER" });
+    expect(
+      createKeyboardShortcut(keyboardEvent({ code: "Digit1", key: "1" }))
+    ).toEqual({ key: "1", label: "1" });
+    expect(
+      createKeyboardShortcut(keyboardEvent({ code: "Numpad1", key: "1" }))
+    ).toEqual({ key: "Numpad1", label: "NUM 1" });
+    expect(
+      createKeyboardShortcut(keyboardEvent({ code: "NumpadAdd", key: "+" }))
+    ).toEqual({ key: "NumpadAdd", label: "NUM +" });
+    expect(
+      createKeyboardShortcut(
+        keyboardEvent({ code: "NumpadDivide", ctrlKey: true, key: "/" })
+      )
+    ).toEqual({ key: "Control+NumpadDivide", label: "CTRL+NUM /" });
+  });
 });
 
 describe("getNutKeysForShortcut", () => {
@@ -77,6 +103,23 @@ describe("getNutKeysForShortcut", () => {
     expect(getNutKeysForShortcut("Ctrl+/")).toEqual([
       Key.LeftControl,
       Key.Slash,
+    ]);
+  });
+
+  it("resolves high function keys", () => {
+    expect(getNutKeysForShortcut("F18")).toEqual([Key.F18]);
+    expect(getNutKeysForShortcut("F20")).toEqual([Key.F20]);
+  });
+
+  it("resolves numpad shortcuts separately from main keyboard shortcuts", () => {
+    expect(getNutKeysForShortcut("Enter")).toEqual([Key.Return]);
+    expect(getNutKeysForShortcut("1")).toEqual([Key.Num1]);
+    expect(getNutKeysForShortcut("Numpad1")).toEqual([Key.NumPad1]);
+    expect(getNutKeysForShortcut("NumpadAdd")).toEqual([Key.Add]);
+    expect(getNutKeysForShortcut("NumpadEnter")).toEqual([Key.Enter]);
+    expect(getNutKeysForShortcut("Control+NumpadDivide")).toEqual([
+      Key.LeftControl,
+      Key.Divide,
     ]);
   });
 
