@@ -14,6 +14,11 @@ export const DEFAULT_COMBO_TERM_MS = 80
 export const MIN_COMBO_TERM_MS = 20
 export const MAX_COMBO_TERM_MS = 250
 
+// Tap-hold defaults
+export const DEFAULT_TAPPING_TERM_MS = 200
+export const MIN_TAPPING_TERM_MS = 80
+export const MAX_TAPPING_TERM_MS = 500
+
 // Mouse control defaults
 export const DEFAULT_MOUSE_SENSITIVITY = 1.0
 export const DEFAULT_MOUSE_ACCELERATION = 1.0

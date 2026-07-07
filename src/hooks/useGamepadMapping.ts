@@ -30,6 +30,8 @@ import {
   LayerAction,
   MappingAction,
   normalizeMappingAssignment,
+  RecordedInputAction,
+  TapHoldAction,
 } from "../types/mappingAction";
 
 export interface ButtonMapping {
@@ -295,7 +297,7 @@ const getEffectiveComboMappings = (
 const areSameMappingActions = (
   previousAction: MappingAction,
   nextAction: MappingAction
-) => {
+): boolean => {
   if (previousAction.type !== nextAction.type) {
     return false;
   }
@@ -308,6 +310,18 @@ const areSameMappingActions = (
     return (
       previousAction.mode === nextAction.mode &&
       previousAction.layer === nextAction.layer
+    );
+  }
+
+  if (
+    previousAction.type === "tap-hold" &&
+    nextAction.type === "tap-hold"
+  ) {
+    return (
+      previousAction.kind === nextAction.kind &&
+      previousAction.tappingTermMs === nextAction.tappingTermMs &&
+      areSameMappingActions(previousAction.tap, nextAction.tap) &&
+      areSameMappingActions(previousAction.hold, nextAction.hold)
     );
   }
 
@@ -367,6 +381,12 @@ interface EffectiveMappingsSnapshot {
   mouseMappings: AxisMapping[];
   scrollMappings: AxisMapping[];
   hotkeyMappingsByStick: Array<[number, AxisMapping[]]>;
+}
+
+interface TapHoldState {
+  action: TapHoldAction;
+  startedAt: number;
+  holdPressed: boolean;
 }
 
 export function useGamepadMapping(gamepads: GamepadState[]) {
@@ -913,6 +933,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   const defaultLayerRef = useRef<Map<number, number>>(new Map());
   const activeLayersRef = useRef<Map<number, number[]>>(new Map());
   const activeActionsRef = useRef<Map<string, MappingAction>>(new Map());
+  const tapHoldStatesRef = useRef<Map<string, TapHoldState>>(new Map());
   const comboInputPressedAtRef = useRef<Map<string, number>>(new Map());
   const activeComboStateKeysRef = useRef<Set<string>>(new Set());
   const activeComboInputsRef = useRef<Map<string, ComboInput[]>>(new Map());
@@ -1241,6 +1262,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         return;
       }
 
+      if (action.type === "tap-hold") {
+        return;
+      }
+
       if (isMouseWheelKey(action.key)) {
         triggerMappedWheelScroll(action.key, stateKey);
         return;
@@ -1258,6 +1283,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         return;
       }
 
+      if (action.type === "tap-hold") {
+        return;
+      }
+
       if (isMouseWheelKey(action.key)) {
         return;
       }
@@ -1265,6 +1294,136 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       simulateKeyPress(action.key, false, stateKey);
     },
     [handleLayerAction, simulateKeyPress]
+  );
+
+  const tapRecordedInputAction = useCallback(
+    (action: RecordedInputAction, stateKey: string) => {
+      if (isMouseWheelKey(action.key)) {
+        triggerMappedWheelScroll(action.key, stateKey);
+        return;
+      }
+
+      void (async () => {
+        await simulateKeyPress(action.key, true, stateKey);
+        await simulateKeyPress(action.key, false, stateKey);
+      })();
+    },
+    [simulateKeyPress, triggerMappedWheelScroll]
+  );
+
+  const pressTapHoldHoldAction = useCallback(
+    (
+      stateKey: string,
+      tapHoldState: TapHoldState,
+      gamepadIndex: number
+    ) => {
+      if (tapHoldState.holdPressed) {
+        return;
+      }
+
+      const activeAction = activeActionsRef.current.get(stateKey);
+      if (
+        activeAction &&
+        !areSameMappingActions(activeAction, tapHoldState.action.hold)
+      ) {
+        releaseMappedAction(activeAction, stateKey, gamepadIndex);
+      }
+
+      tapHoldState.holdPressed = true;
+      activeActionsRef.current.set(stateKey, tapHoldState.action.hold);
+      pressMappedAction(tapHoldState.action.hold, stateKey, gamepadIndex);
+    },
+    [pressMappedAction, releaseMappedAction]
+  );
+
+  const finishTapHoldState = useCallback(
+    (stateKey: string, gamepadIndex: number, shouldTap: boolean) => {
+      const tapHoldState = tapHoldStatesRef.current.get(stateKey);
+      if (!tapHoldState) {
+        return;
+      }
+
+      if (tapHoldState.holdPressed) {
+        releaseMappedAction(tapHoldState.action.hold, stateKey, gamepadIndex);
+        activeActionsRef.current.delete(stateKey);
+      } else if (shouldTap) {
+        tapRecordedInputAction(tapHoldState.action.tap, stateKey);
+      }
+
+      tapHoldStatesRef.current.delete(stateKey);
+    },
+    [releaseMappedAction, tapRecordedInputAction]
+  );
+
+  const cancelTapHoldState = useCallback(
+    (stateKey: string, gamepadIndex: number) => {
+      const tapHoldState = tapHoldStatesRef.current.get(stateKey);
+      if (!tapHoldState) {
+        return;
+      }
+
+      if (tapHoldState.holdPressed) {
+        releaseMappedAction(tapHoldState.action.hold, stateKey, gamepadIndex);
+        activeActionsRef.current.delete(stateKey);
+      }
+
+      tapHoldStatesRef.current.delete(stateKey);
+    },
+    [releaseMappedAction]
+  );
+
+  const advanceTapHoldState = useCallback(
+    (
+      stateKey: string,
+      tapHoldState: TapHoldState,
+      gamepadIndex: number,
+      now: number
+    ) => {
+      if (
+        !tapHoldState.holdPressed &&
+        now - tapHoldState.startedAt >= tapHoldState.action.tappingTermMs
+      ) {
+        pressTapHoldHoldAction(stateKey, tapHoldState, gamepadIndex);
+      }
+    },
+    [pressTapHoldHoldAction]
+  );
+
+  const processTapHoldAction = useCallback(
+    (
+      action: TapHoldAction,
+      pressed: boolean,
+      stateKey: string,
+      gamepadIndex: number
+    ) => {
+      if (!pressed) {
+        finishTapHoldState(stateKey, gamepadIndex, true);
+        return;
+      }
+
+      const existingState = tapHoldStatesRef.current.get(stateKey);
+      if (existingState && !areSameMappingActions(existingState.action, action)) {
+        cancelTapHoldState(stateKey, gamepadIndex);
+      }
+
+      let tapHoldState = tapHoldStatesRef.current.get(stateKey);
+      if (!tapHoldState) {
+        tapHoldState = {
+          action,
+          startedAt: performance.now(),
+          holdPressed: false,
+        };
+        tapHoldStatesRef.current.set(stateKey, tapHoldState);
+      }
+
+      advanceTapHoldState(
+        stateKey,
+        tapHoldState,
+        gamepadIndex,
+        performance.now()
+      );
+    },
+    [advanceTapHoldState, cancelTapHoldState, finishTapHoldState]
   );
 
   const triggerMappedAction = useCallback(
@@ -1275,6 +1434,13 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       gamepadIndex: number
     ) => {
       const { action } = normalizeMappingAssignment(mapping);
+
+      if (action.type === "tap-hold") {
+        processTapHoldAction(action, pressed, stateKey, gamepadIndex);
+        return;
+      }
+
+      cancelTapHoldState(stateKey, gamepadIndex);
       const activeAction = activeActionsRef.current.get(stateKey);
 
       if (!pressed) {
@@ -1290,7 +1456,12 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       activeActionsRef.current.set(stateKey, action);
       pressMappedAction(action, stateKey, gamepadIndex);
     },
-    [pressMappedAction, releaseMappedAction]
+    [
+      cancelTapHoldState,
+      pressMappedAction,
+      processTapHoldAction,
+      releaseMappedAction,
+    ]
   );
 
   const clearActiveComboState = useCallback((comboStateKey: string) => {
@@ -1315,6 +1486,8 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
 
   const releaseSuppressedAction = useCallback(
     (stateKey: string, gamepadIndex: number) => {
+      cancelTapHoldState(stateKey, gamepadIndex);
+
       const activeAction = activeActionsRef.current.get(stateKey);
       if (!activeAction) {
         return;
@@ -1323,7 +1496,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       releaseMappedAction(activeAction, stateKey, gamepadIndex);
       activeActionsRef.current.delete(stateKey);
     },
-    [releaseMappedAction]
+    [cancelTapHoldState, releaseMappedAction]
   );
 
   const processComboMappings = useCallback(
@@ -1409,6 +1582,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         ) {
           releaseMappedAction(action, stateKey, gamepadIndex);
           activeActionsRef.current.delete(stateKey);
+          tapHoldStatesRef.current.delete(stateKey);
           if (stateKey.includes("-combo-")) {
             clearActiveComboState(stateKey);
           }
@@ -1416,6 +1590,45 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
       });
     },
     [clearActiveComboState, releaseMappedAction]
+  );
+
+  const isTapHoldStatePressed = useCallback(
+    (gamepad: GamepadState, stateKey: string) => {
+      if (stateKey.includes("-combo-")) {
+        const comboInputs = activeComboInputsRef.current.get(stateKey);
+        return (
+          !!comboInputs &&
+          comboInputs.every((input) => isComboInputPressed(gamepad, input))
+        );
+      }
+
+      return getPressedStateForStateKey(gamepad, stateKey);
+    },
+    []
+  );
+
+  const reconcileTapHoldStatesForGamepad = useCallback(
+    (gamepad: GamepadState, seenStateKeys: Set<string>) => {
+      const stateKeyPrefix = `gamepad-${gamepad.index}-`;
+      const now = performance.now();
+
+      Array.from(tapHoldStatesRef.current.entries()).forEach(
+        ([stateKey, tapHoldState]) => {
+          if (!stateKey.startsWith(stateKeyPrefix) || seenStateKeys.has(stateKey)) {
+            return;
+          }
+
+          if (isTapHoldStatePressed(gamepad, stateKey)) {
+            seenStateKeys.add(stateKey);
+            advanceTapHoldState(stateKey, tapHoldState, gamepad.index, now);
+            return;
+          }
+
+          finishTapHoldState(stateKey, gamepad.index, true);
+        }
+      );
+    },
+    [advanceTapHoldState, finishTapHoldState, isTapHoldStatePressed]
   );
 
   const reconcileActiveLayerActionHoldersForGamepad = useCallback(
@@ -1449,6 +1662,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
 
             releaseMappedAction(action, stateKey, gamepad.index);
             activeActionsRef.current.delete(stateKey);
+            tapHoldStatesRef.current.delete(stateKey);
             clearActiveComboState(stateKey);
             return;
           }
@@ -1461,6 +1675,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
 
           releaseMappedAction(action, stateKey, gamepad.index);
           activeActionsRef.current.delete(stateKey);
+          tapHoldStatesRef.current.delete(stateKey);
         }
       );
 
@@ -1833,6 +2048,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         });
       });
 
+      reconcileTapHoldStatesForGamepad(gamepad, seenStateKeys);
       releaseInactiveActionsForGamepad(gamepad.index, seenStateKeys);
     });
   }, [
@@ -1842,6 +2058,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     getMapping,
     processComboMappings,
     reconcileActiveLayerActionHoldersForGamepad,
+    reconcileTapHoldStatesForGamepad,
     releaseInactiveActionsForGamepad,
     sendMouseScroll,
     triggerMappedAction,

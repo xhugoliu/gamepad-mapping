@@ -26,6 +26,11 @@ export function KeyMappingSelector({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isEditing) {
+        const target = e.target as HTMLElement | null
+        if (target && isInteractiveElement(target)) {
+          return
+        }
+
         e.preventDefault()
 
         const shortcut = createKeyboardShortcut(e)
