@@ -148,6 +148,19 @@ const WHEEL_OPTIONS: InputOption[] = [
   { key: "MouseWheelRight", label: "Wheel Right" },
 ];
 
+const MEDIA_OPTIONS: InputOption[] = [
+  { key: "MediaRewind", label: "Media Rewind" },
+  { key: "MediaPlayPause", label: "Media Play/Pause" },
+  { key: "MediaFastForward", label: "Media Fast Forward" },
+  { key: "MediaVolumeDown", label: "Volume Down" },
+  { key: "MediaMute", label: "Mute" },
+  { key: "MediaVolumeUp", label: "Volume Up" },
+  { key: "MediaPrevious", label: "Media Previous" },
+  { key: "MediaNext", label: "Media Next" },
+  { key: "MediaStop", label: "Media Stop" },
+  { key: "MediaPause", label: "Media Pause" },
+];
+
 export const INPUT_OPTION_GROUPS: InputOptionGroup[] = [
   {
     id: "letters",
@@ -214,6 +227,12 @@ export const INPUT_OPTION_GROUPS: InputOptionGroup[] = [
     label: "Mouse Wheel",
     allowModifiers: false,
     options: WHEEL_OPTIONS,
+  },
+  {
+    id: "media",
+    label: "Media Keys",
+    allowModifiers: false,
+    options: MEDIA_OPTIONS,
   },
 ];
 

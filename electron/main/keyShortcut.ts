@@ -45,6 +45,17 @@ const SPECIAL_KEY_MAP: Record<string, Key> = {
   ArrowLeft: Key.Left,
   ArrowRight: Key.Right,
   ArrowUp: Key.Up,
+  MediaFastForward: Key.AudioForward,
+  MediaMute: Key.AudioMute,
+  MediaNext: Key.AudioNext,
+  MediaPause: Key.AudioPause,
+  MediaPlay: Key.AudioPlay,
+  MediaPlayPause: Key.AudioPlay,
+  MediaPrevious: Key.AudioPrev,
+  MediaRewind: Key.AudioRewind,
+  MediaStop: Key.AudioStop,
+  MediaVolumeDown: Key.AudioVolDown,
+  MediaVolumeUp: Key.AudioVolUp,
 };
 
 const ALIAS_KEY_MAP: Record<string, Key> = {
@@ -77,6 +88,16 @@ const ALIAS_KEY_MAP: Record<string, Key> = {
   NumpadEqual: Key.NumPadEqual,
   NumpadMultiply: Key.Multiply,
   NumpadSubtract: Key.Subtract,
+  C_FF: Key.AudioForward,
+  C_MUTE: Key.AudioMute,
+  C_NEXT: Key.AudioNext,
+  C_PAUSE: Key.AudioPause,
+  C_PP: Key.AudioPlay,
+  C_PREV: Key.AudioPrev,
+  C_REWIND: Key.AudioRewind,
+  C_STOP: Key.AudioStop,
+  C_VOL_DN: Key.AudioVolDown,
+  C_VOL_UP: Key.AudioVolUp,
 };
 
 const UNSHIFTED_CHARACTER_KEY_MAP: Record<string, Key> = {

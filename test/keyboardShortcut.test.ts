@@ -37,6 +37,26 @@ describe("getNutKeysForShortcut", () => {
     expect(getNutKeysForShortcut("F20")).toEqual([Key.F20]);
   });
 
+  it("resolves media keys and ZMK media aliases", () => {
+    expect(getNutKeysForShortcut("MediaRewind")).toEqual([Key.AudioRewind]);
+    expect(getNutKeysForShortcut("MediaPlayPause")).toEqual([Key.AudioPlay]);
+    expect(getNutKeysForShortcut("MediaFastForward")).toEqual([
+      Key.AudioForward,
+    ]);
+    expect(getNutKeysForShortcut("MediaVolumeDown")).toEqual([
+      Key.AudioVolDown,
+    ]);
+    expect(getNutKeysForShortcut("MediaMute")).toEqual([Key.AudioMute]);
+    expect(getNutKeysForShortcut("MediaVolumeUp")).toEqual([Key.AudioVolUp]);
+
+    expect(getNutKeysForShortcut("C_REWIND")).toEqual([Key.AudioRewind]);
+    expect(getNutKeysForShortcut("C_PP")).toEqual([Key.AudioPlay]);
+    expect(getNutKeysForShortcut("C_FF")).toEqual([Key.AudioForward]);
+    expect(getNutKeysForShortcut("C_VOL_DN")).toEqual([Key.AudioVolDown]);
+    expect(getNutKeysForShortcut("C_MUTE")).toEqual([Key.AudioMute]);
+    expect(getNutKeysForShortcut("C_VOL_UP")).toEqual([Key.AudioVolUp]);
+  });
+
   it("resolves numpad shortcuts separately from main keyboard shortcuts", () => {
     expect(getNutKeysForShortcut("Enter")).toEqual([Key.Return]);
     expect(getNutKeysForShortcut("1")).toEqual([Key.Num1]);

@@ -42,6 +42,11 @@ describe("input options", () => {
       optionKey: "MouseBack",
       modifiers: [],
     });
+    expect(getInputOptionSelection("MediaVolumeUp")).toEqual({
+      groupId: "media",
+      optionKey: "MediaVolumeUp",
+      modifiers: [],
+    });
   });
 
   it("keeps dropdown keyboard options aligned with output support", () => {
