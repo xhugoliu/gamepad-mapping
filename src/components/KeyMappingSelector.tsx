@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createKeyboardShortcut } from '../utils/keyboardShortcut'
+import { getMouseButtonMapping } from '../utils/mouseButtonMapping'
 import './MappingPanel.css'
 
 interface KeyMappingSelectorProps {
@@ -88,26 +89,34 @@ export function KeyMappingSelector({
           return // Don't capture clicks on buttons/links
         }
 
-        e.preventDefault()
-        e.stopPropagation()
-        let key: string
-        let label: string
-
-        if (e.button === 0) {
-          key = 'MouseLeft'
-          label = 'Left Mouse'
-        } else if (e.button === 1) {
-          key = 'MouseMiddle'
-          label = 'Middle Mouse'
-        } else if (e.button === 2) {
-          key = 'MouseRight'
-          label = 'Right Mouse'
-        } else {
-          return // Unknown button
+        const mouseButtonMapping = getMouseButtonMapping(e.button)
+        if (!mouseButtonMapping) {
+          return
         }
 
-        onKeyPress(key, label)
+        e.preventDefault()
+        e.stopPropagation()
+
+        onKeyPress(mouseButtonMapping.key, mouseButtonMapping.label)
       }
+    }
+
+    const suppressSideButtonDefault = (e: MouseEvent) => {
+      if (
+        !isEditing ||
+        !containerRef.current ||
+        (e.button !== 3 && e.button !== 4)
+      ) {
+        return
+      }
+
+      const target = e.target as HTMLElement
+      if (!isEventInsideCurrentMappingItem(target) || isInteractiveElement(target)) {
+        return
+      }
+
+      e.preventDefault()
+      e.stopPropagation()
     }
 
     const handleWheel = (e: WheelEvent) => {
@@ -149,12 +158,16 @@ export function KeyMappingSelector({
     if (isEditing) {
       window.addEventListener('keydown', handleKeyDown)
       window.addEventListener('mousedown', handleMouseDown, true) // Use capture phase
+      window.addEventListener('mouseup', suppressSideButtonDefault, true)
+      window.addEventListener('auxclick', suppressSideButtonDefault, true)
       window.addEventListener('wheel', handleWheel, { capture: true, passive: false })
     }
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('mousedown', handleMouseDown, true)
+      window.removeEventListener('mouseup', suppressSideButtonDefault, true)
+      window.removeEventListener('auxclick', suppressSideButtonDefault, true)
       window.removeEventListener('wheel', handleWheel, true)
     }
   }, [isEditing, onKeyPress])

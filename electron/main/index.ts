@@ -1,4 +1,4 @@
-import { Button, keyboard, mouse } from "@nut-tree-fork/nut-js";
+import { keyboard, mouse } from "@nut-tree-fork/nut-js";
 import {
   app,
   BrowserWindow,
@@ -15,6 +15,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { getNutKeysForShortcut } from "./keyShortcut";
+import { getMouseButtonAction } from "./mouseButtonAction";
 import { update } from "./update";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -162,28 +163,38 @@ ipcMain.handle("mouse-move", async (_event, deltaX: number, deltaY: number) => {
   }
 });
 
-// Mouse button mapping
-const mouseButtonMap: Record<string, Button> = {
-  MouseLeft: Button.LEFT,
-  MouseRight: Button.RIGHT,
-  MouseMiddle: Button.MIDDLE,
-};
-
 // Handle mouse button toggle requests
 ipcMain.handle(
   "mouse-button-toggle",
   async (_event, button: string, down: boolean) => {
     try {
-      const nutButton = mouseButtonMap[button];
-      if (nutButton === undefined) {
+      const buttonAction = getMouseButtonAction(button);
+      if (!buttonAction) {
         console.warn(`Unknown mouse button: ${button}`);
         return { success: false, error: `Unknown mouse button: ${button}` };
       }
 
+      if (buttonAction.type === "shortcut") {
+        if (down) {
+          const nutKeys = getNutKeysForShortcut(buttonAction.key);
+          if (!nutKeys) {
+            return {
+              success: false,
+              error: `Unsupported mouse shortcut: ${buttonAction.key}`,
+            };
+          }
+
+          await keyboard.pressKey(...nutKeys);
+          await keyboard.releaseKey(...nutKeys);
+        }
+
+        return { success: true };
+      }
+
       if (down) {
-        await mouse.pressButton(nutButton);
+        await mouse.pressButton(buttonAction.button);
       } else {
-        await mouse.releaseButton(nutButton);
+        await mouse.releaseButton(buttonAction.button);
       }
 
       return { success: true };
