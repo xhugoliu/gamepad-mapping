@@ -1,15 +1,5 @@
 import { keyboard, mouse } from "@nut-tree-fork/nut-js";
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Menu,
-  nativeImage,
-  screen,
-  shell,
-  systemPreferences,
-  Tray,
-} from "electron";
+import electron from "electron";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -20,6 +10,17 @@ import { update } from "./update";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  screen,
+  shell,
+  systemPreferences,
+  Tray,
+} = electron;
 
 const { libnut } = require("@nut-tree-fork/libnut/dist/import_libnut");
 
@@ -54,8 +55,8 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
-let win: BrowserWindow | null = null;
-const preload = path.join(__dirname, "../preload/index.mjs");
+let win: Electron.BrowserWindow | null = null;
+const preload = path.join(__dirname, "../preload/index.cjs");
 const indexHtml = path.join(RENDERER_DIST, "index.html");
 
 function createWindow() {
@@ -280,7 +281,7 @@ app.setLoginItemSettings({
 });
 
 
-let tray = null;
+let tray: Electron.Tray | null = null;
 
 function createTray() {
   const trayIconPath = path.join(process.env.VITE_PUBLIC, "trayTemplate@2x.png");

@@ -23,22 +23,32 @@ export default defineConfig(({ command }) => {
       react(),
       electron({
         main: {
-          // Shortcut of `build.lib.entry`
-          entry: 'electron/main/index.ts',
           onstart(args) {
             if (process.env.VSCODE_DEBUG) {
               console.log(/* For `.vscode/.debug.script.mjs` */'[startup] Electron App')
             } else {
-              args.startup()
+              const electronEnv = { ...process.env }
+              delete electronEnv.ELECTRON_RUN_AS_NODE
+              args.startup(undefined, { env: electronEnv })
             }
           },
           vite: {
             build: {
+              lib: {
+                entry: 'electron/main/index.ts',
+                formats: ['cjs'],
+                fileName: () => 'index.cjs',
+              },
               sourcemap,
               minify: isBuild,
               outDir: 'dist-electron/main',
               rollupOptions: {
                 external: Object.keys('dependencies' in pkg ? pkg.dependencies : {}),
+                output: {
+                  format: 'cjs',
+                  entryFileNames: 'index.cjs',
+                  chunkFileNames: '[name].cjs',
+                },
               },
             },
           },
@@ -54,6 +64,10 @@ export default defineConfig(({ command }) => {
               outDir: 'dist-electron/preload',
               rollupOptions: {
                 external: Object.keys('dependencies' in pkg ? pkg.dependencies : {}),
+                output: {
+                  entryFileNames: '[name].cjs',
+                  chunkFileNames: '[name].cjs',
+                },
               },
             },
           },

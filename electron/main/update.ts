@@ -1,29 +1,42 @@
-import { app, ipcMain } from 'electron'
+import electron from 'electron'
 import { createRequire } from 'node:module'
 import type {
+  AppUpdater,
   ProgressInfo,
   UpdateDownloadedEvent,
   UpdateInfo,
 } from 'electron-updater'
 
-const { autoUpdater } = createRequire(import.meta.url)('electron-updater');
+const { app, ipcMain } = electron
+const require = createRequire(import.meta.url)
 
 let handlersRegistered = false;
+let autoUpdater: AppUpdater | null = null;
+
+function getAutoUpdater() {
+  if (!autoUpdater) {
+    autoUpdater = require('electron-updater').autoUpdater as AppUpdater
+  }
+
+  return autoUpdater
+}
 
 export function update(win: Electron.BrowserWindow) {
+  const updater = getAutoUpdater()
+
   // When set to false, the update download will be triggered through the API
-  autoUpdater.autoDownload = false
-  autoUpdater.disableWebInstaller = false
-  autoUpdater.allowDowngrade = false
+  updater.autoDownload = false
+  updater.disableWebInstaller = false
+  updater.allowDowngrade = false
 
   // start check
-  autoUpdater.on('checking-for-update', function () { })
+  updater.on('checking-for-update', function () { })
   // update available
-  autoUpdater.on('update-available', (arg: UpdateInfo) => {
+  updater.on('update-available', (arg: UpdateInfo) => {
     win.webContents.send('update-can-available', { update: true, version: app.getVersion(), newVersion: arg?.version })
   })
   // update not available
-  autoUpdater.on('update-not-available', (arg: UpdateInfo) => {
+  updater.on('update-not-available', (arg: UpdateInfo) => {
     win.webContents.send('update-can-available', { update: false, version: app.getVersion(), newVersion: arg?.version })
   })
 
@@ -37,7 +50,7 @@ export function update(win: Electron.BrowserWindow) {
       }
 
       try {
-        return await autoUpdater.checkForUpdatesAndNotify()
+        return await getAutoUpdater().checkForUpdatesAndNotify()
       } catch (error) {
         return { message: 'Network error', error }
       }
@@ -64,7 +77,7 @@ export function update(win: Electron.BrowserWindow) {
 
     // Install now
     ipcMain.handle('quit-and-install', () => {
-      autoUpdater.quitAndInstall(false, true)
+      getAutoUpdater().quitAndInstall(false, true)
     })
 
     handlersRegistered = true;
@@ -75,8 +88,10 @@ function startDownload(
   callback: (error: Error | null, info: ProgressInfo | null) => void,
   complete: (event: UpdateDownloadedEvent) => void,
 ) {
-  autoUpdater.on('download-progress', (info: ProgressInfo) => callback(null, info))
-  autoUpdater.on('error', (error: Error) => callback(error, null))
-  autoUpdater.on('update-downloaded', complete)
-  autoUpdater.downloadUpdate()
+  const updater = getAutoUpdater()
+
+  updater.on('download-progress', (info: ProgressInfo) => callback(null, info))
+  updater.on('error', (error: Error) => callback(error, null))
+  updater.on('update-downloaded', complete)
+  updater.downloadUpdate()
 }

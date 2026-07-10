@@ -13,6 +13,13 @@ import { useGamepadMapping } from "./hooks/useGamepadMapping";
 function App() {
   const gamepads = useGamepad();
   const {
+    getProfiles,
+    getActiveProfileId,
+    setActiveProfile,
+    addProfile,
+    duplicateProfile,
+    renameProfile,
+    removeProfile,
     getLayers,
     getLayerView,
     ensureLayer,
@@ -53,6 +60,13 @@ function App() {
     (g) => g.index === selectedGamepadIndex
   );
   const selectedGamepadId = selectedGamepad?.index ?? null;
+  const selectedProfiles =
+    selectedGamepadId !== null ? getProfiles(selectedGamepadId) : [];
+  const selectedProfileId =
+    selectedGamepadId !== null ? getActiveProfileId(selectedGamepadId) : "";
+  const selectedProfile =
+    selectedProfiles.find((profile) => profile.id === selectedProfileId) ??
+    selectedProfiles[0];
   const selectedLayers =
     selectedGamepadId !== null ? getLayers(selectedGamepadId) : [];
   const selectedMapping =
@@ -88,6 +102,70 @@ function App() {
     setSelectedLayerIndex(0);
     setSelectedControl(null);
   };
+
+  const handleProfileSelect = useCallback(
+    (profileId: string) => {
+      if (selectedGamepadId === null) {
+        return;
+      }
+
+      setActiveProfile(selectedGamepadId, profileId);
+      setSelectedLayerIndex(0);
+      handleControlSelect(null);
+    },
+    [handleControlSelect, selectedGamepadId, setActiveProfile]
+  );
+
+  const handleAddProfile = useCallback(() => {
+    if (selectedGamepadId === null) {
+      return;
+    }
+
+    addProfile(selectedGamepadId);
+    setSelectedLayerIndex(0);
+    handleControlSelect(null);
+  }, [addProfile, handleControlSelect, selectedGamepadId]);
+
+  const handleDuplicateProfile = useCallback(() => {
+    if (selectedGamepadId === null) {
+      return;
+    }
+
+    duplicateProfile(selectedGamepadId);
+    setSelectedLayerIndex(0);
+    handleControlSelect(null);
+  }, [duplicateProfile, handleControlSelect, selectedGamepadId]);
+
+  const handleRenameProfile = useCallback(
+    (name: string) => {
+      if (selectedGamepadId === null || !selectedProfileId) {
+        return;
+      }
+
+      renameProfile(selectedGamepadId, selectedProfileId, name);
+    },
+    [renameProfile, selectedGamepadId, selectedProfileId]
+  );
+
+  const handleRemoveProfile = useCallback(() => {
+    if (
+      selectedGamepadId === null ||
+      !selectedProfileId ||
+      selectedProfiles.length <= 1
+    ) {
+      return;
+    }
+
+    removeProfile(selectedGamepadId, selectedProfileId);
+    setSelectedLayerIndex(0);
+    handleControlSelect(null);
+  }, [
+    handleControlSelect,
+    removeProfile,
+    selectedGamepadId,
+    selectedProfileId,
+    selectedProfiles.length,
+  ]);
 
   const handleAddLayer = useCallback(() => {
     if (selectedGamepadId === null) {
@@ -149,30 +227,98 @@ function App() {
             <div className="panel-header">
               <h2>Mapping</h2>
               {selectedGamepad && (
-                <div className="layer-toolbar">
-                  <label htmlFor="layer-select">Layer</label>
-                  <select
-                    id="layer-select"
-                    value={selectedLayerIndex}
-                    onChange={(event) => {
-                      setSelectedLayerIndex(Number(event.target.value));
-                      handleControlSelect(null);
-                    }}
-                  >
-                    {selectedLayers.map((layer) => (
-                      <option key={layer.layerIndex} value={layer.layerIndex}>
-                        {layer.layerIndex}: {layer.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="layer-add-button"
-                    type="button"
-                    onClick={handleAddLayer}
-                    title="Add layer"
-                  >
-                    +
-                  </button>
+                <div className="mapping-toolbar-stack">
+                  <div className="profile-toolbar">
+                    <label htmlFor="profile-select">Profile</label>
+                    <div className="select-shell">
+                      <select
+                        id="profile-select"
+                        className="toolbar-select"
+                        value={selectedProfile?.id ?? ""}
+                        onChange={(event) =>
+                          handleProfileSelect(event.target.value)
+                        }
+                      >
+                        {selectedProfiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="profile-action-group">
+                      <button
+                        className="toolbar-icon-button"
+                        type="button"
+                        onClick={handleAddProfile}
+                        title="Add profile"
+                        aria-label="Add profile"
+                      >
+                        <span className="icon-plus" aria-hidden="true" />
+                      </button>
+                      <button
+                        className="toolbar-icon-button"
+                        type="button"
+                        onClick={handleDuplicateProfile}
+                        title="Duplicate profile"
+                        aria-label="Duplicate profile"
+                      >
+                        <span className="icon-copy" aria-hidden="true" />
+                      </button>
+                      <button
+                        className="toolbar-icon-button"
+                        type="button"
+                        onClick={handleRemoveProfile}
+                        disabled={selectedProfiles.length <= 1}
+                        title="Delete profile"
+                        aria-label="Delete profile"
+                      >
+                        <span className="icon-x" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="profile-name-row">
+                    <label htmlFor="profile-name">Name</label>
+                    <input
+                      id="profile-name"
+                      value={selectedProfile?.name ?? ""}
+                      onChange={(event) =>
+                        handleRenameProfile(event.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="layer-toolbar">
+                    <label htmlFor="layer-select">Layer</label>
+                    <div className="select-shell">
+                      <select
+                        id="layer-select"
+                        className="toolbar-select"
+                        value={selectedLayerIndex}
+                        onChange={(event) => {
+                          setSelectedLayerIndex(Number(event.target.value));
+                          handleControlSelect(null);
+                        }}
+                      >
+                        {selectedLayers.map((layer) => (
+                          <option
+                            key={layer.layerIndex}
+                            value={layer.layerIndex}
+                          >
+                            {layer.layerIndex}: {layer.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      className="toolbar-icon-button"
+                      type="button"
+                      onClick={handleAddLayer}
+                      title="Add layer"
+                      aria-label="Add layer"
+                    >
+                      <span className="icon-plus" aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

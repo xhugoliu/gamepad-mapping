@@ -110,8 +110,9 @@ export interface GamepadLayerMapping {
   comboMappings: ComboMapping[];
 }
 
-export interface GamepadMapping {
-  gamepadIndex: number;
+export interface GamepadMappingProfile {
+  id: string;
+  name: string;
   buttonMappings: ButtonMapping[];
   axisMappings: AxisMapping[];
   dpadMappings?: DpadMapping[];
@@ -119,9 +120,24 @@ export interface GamepadMapping {
   layers?: GamepadLayerMapping[];
 }
 
+export interface GamepadMapping {
+  gamepadIndex: number;
+  id?: string;
+  name?: string;
+  buttonMappings: ButtonMapping[];
+  axisMappings: AxisMapping[];
+  dpadMappings?: DpadMapping[];
+  comboMappings?: ComboMapping[];
+  layers?: GamepadLayerMapping[];
+  activeProfileId?: string;
+  profiles?: GamepadMappingProfile[];
+}
+
 const STORAGE_KEY = "gamepad-mappings";
 const SCROLL_STEPS_PER_SECOND = 60;
 const BASE_LAYER_INDEX = 0;
+const DEFAULT_PROFILE_ID = "default";
+const DEFAULT_PROFILE_NAME = "Default";
 
 const getLayerName = (layerIndex: number) =>
   layerIndex === BASE_LAYER_INDEX ? "Base" : `Layer ${layerIndex}`;
@@ -144,7 +160,49 @@ const createLayerMapping = (
 const normalizeLayerIndex = (layerIndex: number) =>
   Number.isFinite(layerIndex) ? Math.max(0, Math.floor(layerIndex)) : 0;
 
-const syncLegacyBaseLayer = (mapping: GamepadMapping) => {
+const cloneSerializable = <T,>(value: T): T =>
+  JSON.parse(JSON.stringify(value)) as T;
+
+const cloneButtonMapping = (mapping: ButtonMapping): ButtonMapping => ({
+  ...mapping,
+  action: mapping.action ? cloneSerializable(mapping.action) : undefined,
+});
+
+const cloneAxisMapping = (mapping: AxisMapping): AxisMapping => ({
+  ...mapping,
+  action: mapping.action ? cloneSerializable(mapping.action) : undefined,
+});
+
+const cloneDpadMapping = (mapping: DpadMapping): DpadMapping => ({
+  ...mapping,
+  action: mapping.action ? cloneSerializable(mapping.action) : undefined,
+});
+
+const cloneComboMapping = (mapping: ComboMapping): ComboMapping => ({
+  ...mapping,
+  inputs: (mapping.inputs ?? []).map((input) => ({ ...input })),
+  action: mapping.action ? cloneSerializable(mapping.action) : undefined,
+});
+
+const normalizeLayerMapping = (
+  layer: GamepadLayerMapping
+): GamepadLayerMapping => {
+  const layerIndex = normalizeLayerIndex(layer.layerIndex);
+
+  return {
+    layerIndex,
+    name: layer.name || getLayerName(layerIndex),
+    buttonMappings: (layer.buttonMappings ?? []).map(cloneButtonMapping),
+    axisMappings: (layer.axisMappings ?? []).map(cloneAxisMapping),
+    dpadMappings: (layer.dpadMappings ?? []).map(cloneDpadMapping),
+    comboMappings: (layer.comboMappings ?? []).map((comboMapping) => ({
+      ...cloneComboMapping(comboMapping),
+      termMs: normalizeComboTermMs(comboMapping.termMs),
+    })),
+  };
+};
+
+const syncBaseLayer = (mapping: GamepadMappingProfile) => {
   const baseLayer = mapping.layers?.find(
     (layer) => layer.layerIndex === BASE_LAYER_INDEX
   );
@@ -159,23 +217,15 @@ const syncLegacyBaseLayer = (mapping: GamepadMapping) => {
   mapping.comboMappings = baseLayer.comboMappings;
 };
 
-const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
+const normalizeProfileMapping = (
+  profile: GamepadMappingProfile,
+  fallbackName: string
+): GamepadMappingProfile => {
   const layerByIndex = new Map<number, GamepadLayerMapping>();
 
-  mapping.layers?.forEach((layer) => {
-    const layerIndex = normalizeLayerIndex(layer.layerIndex);
-    layerByIndex.set(layerIndex, {
-      layerIndex,
-      name: layer.name || getLayerName(layerIndex),
-      buttonMappings: layer.buttonMappings ?? [],
-      axisMappings: layer.axisMappings ?? [],
-      dpadMappings: layer.dpadMappings ?? [],
-      comboMappings: (layer.comboMappings ?? []).map((comboMapping) => ({
-        ...comboMapping,
-        inputs: comboMapping.inputs ?? [],
-        termMs: normalizeComboTermMs(comboMapping.termMs),
-      })),
-    });
+  profile.layers?.forEach((layer) => {
+    const normalizedLayer = normalizeLayerMapping(layer);
+    layerByIndex.set(normalizedLayer.layerIndex, normalizedLayer);
   });
 
   if (!layerByIndex.has(BASE_LAYER_INDEX)) {
@@ -183,10 +233,13 @@ const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
       BASE_LAYER_INDEX,
       createLayerMapping(
         BASE_LAYER_INDEX,
-        mapping.buttonMappings ?? [],
-        mapping.axisMappings ?? [],
-        mapping.dpadMappings ?? [],
-        mapping.comboMappings ?? []
+        (profile.buttonMappings ?? []).map(cloneButtonMapping),
+        (profile.axisMappings ?? []).map(cloneAxisMapping),
+        (profile.dpadMappings ?? []).map(cloneDpadMapping),
+        (profile.comboMappings ?? []).map((comboMapping) => ({
+          ...cloneComboMapping(comboMapping),
+          termMs: normalizeComboTermMs(comboMapping.termMs),
+        }))
       )
     );
   }
@@ -199,7 +252,9 @@ const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
   )!;
 
   return {
-    ...mapping,
+    ...profile,
+    id: profile.id || DEFAULT_PROFILE_ID,
+    name: profile.name || fallbackName,
     buttonMappings: baseLayer.buttonMappings,
     axisMappings: baseLayer.axisMappings,
     dpadMappings: baseLayer.dpadMappings,
@@ -208,16 +263,74 @@ const normalizeGamepadMapping = (mapping: GamepadMapping): GamepadMapping => {
   };
 };
 
+export const normalizeGamepadMapping = (
+  mapping: GamepadMapping
+): GamepadMapping => {
+  const seenProfileIds = new Set<string>();
+  const sourceProfiles =
+    mapping.profiles && mapping.profiles.length > 0
+      ? mapping.profiles
+      : [
+          {
+            id: DEFAULT_PROFILE_ID,
+            name: DEFAULT_PROFILE_NAME,
+            buttonMappings: mapping.buttonMappings ?? [],
+            axisMappings: mapping.axisMappings ?? [],
+            dpadMappings: mapping.dpadMappings ?? [],
+            comboMappings: mapping.comboMappings ?? [],
+            layers: mapping.layers,
+          },
+        ];
+  const profiles = sourceProfiles.map((profile, index) => {
+    const fallbackId =
+      index === 0 ? DEFAULT_PROFILE_ID : `profile-${index + 1}`;
+    let id = profile.id || fallbackId;
+    let duplicateCounter = index + 1;
+
+    while (seenProfileIds.has(id)) {
+      duplicateCounter += 1;
+      id = `profile-${duplicateCounter}`;
+    }
+    seenProfileIds.add(id);
+
+    return normalizeProfileMapping(
+      {
+        ...profile,
+        id,
+      },
+      index === 0 ? DEFAULT_PROFILE_NAME : `Profile ${index + 1}`
+    );
+  });
+  const activeProfile =
+    profiles.find((profile) => profile.id === mapping.activeProfileId) ??
+    profiles[0];
+
+  return {
+    ...mapping,
+    id: activeProfile.id,
+    name: activeProfile.name,
+    activeProfileId: activeProfile.id,
+    profiles,
+    buttonMappings: activeProfile.buttonMappings,
+    axisMappings: activeProfile.axisMappings,
+    dpadMappings: activeProfile.dpadMappings,
+    comboMappings: activeProfile.comboMappings,
+    layers: activeProfile.layers,
+  };
+};
+
 const createGamepadMapping = (gamepadIndex: number): GamepadMapping =>
   normalizeGamepadMapping({
     gamepadIndex,
+    id: DEFAULT_PROFILE_ID,
+    name: DEFAULT_PROFILE_NAME,
     buttonMappings: [],
     axisMappings: [],
     dpadMappings: [],
   });
 
 const getOrCreateLayerMapping = (
-  mapping: GamepadMapping,
+  mapping: GamepadMappingProfile,
   layerIndex: number
 ) => {
   const normalizedLayerIndex = normalizeLayerIndex(layerIndex);
@@ -232,8 +345,113 @@ const getOrCreateLayerMapping = (
     mapping.layers = layers;
   }
 
-  syncLegacyBaseLayer(mapping);
+  syncBaseLayer(mapping);
   return layer;
+};
+
+const getActiveProfile = (mapping: GamepadMapping) =>
+  mapping.profiles?.find((profile) => profile.id === mapping.activeProfileId) ??
+  mapping.profiles?.[0];
+
+const syncActiveProfile = (mapping: GamepadMapping) => {
+  const activeProfile = getActiveProfile(mapping);
+
+  if (!activeProfile) {
+    return;
+  }
+
+  syncBaseLayer(activeProfile);
+  mapping.id = activeProfile.id;
+  mapping.name = activeProfile.name;
+  mapping.activeProfileId = activeProfile.id;
+  mapping.buttonMappings = activeProfile.buttonMappings;
+  mapping.axisMappings = activeProfile.axisMappings;
+  mapping.dpadMappings = activeProfile.dpadMappings;
+  mapping.comboMappings = activeProfile.comboMappings;
+  mapping.layers = activeProfile.layers;
+};
+
+const getOrCreateActiveProfileLayer = (
+  mapping: GamepadMapping,
+  layerIndex: number
+) => {
+  const activeProfile = getActiveProfile(mapping);
+
+  if (!activeProfile) {
+    return null;
+  }
+
+  return getOrCreateLayerMapping(activeProfile, layerIndex);
+};
+
+const cloneProfileMapping = (
+  profile: GamepadMappingProfile,
+  id: string,
+  name: string
+): GamepadMappingProfile =>
+  normalizeProfileMapping(
+    {
+      ...profile,
+      id,
+      name,
+      layers: profile.layers?.map(normalizeLayerMapping),
+    },
+    name
+  );
+
+const createEmptyProfileMapping = (
+  id: string,
+  name: string
+): GamepadMappingProfile =>
+  normalizeProfileMapping(
+    {
+      id,
+      name,
+      buttonMappings: [],
+      axisMappings: [],
+      dpadMappings: [],
+      comboMappings: [],
+    },
+    name
+  );
+
+const getNextProfileId = (profiles: GamepadMappingProfile[]) => {
+  const existingIds = new Set(profiles.map((profile) => profile.id));
+  let nextIndex = profiles.length + 1;
+
+  while (existingIds.has(`profile-${nextIndex}`)) {
+    nextIndex += 1;
+  }
+
+  return `profile-${nextIndex}`;
+};
+
+const getNextProfileName = (profiles: GamepadMappingProfile[]) => {
+  const existingNames = new Set(profiles.map((profile) => profile.name));
+  let nextIndex = profiles.length + 1;
+
+  while (existingNames.has(`Profile ${nextIndex}`)) {
+    nextIndex += 1;
+  }
+
+  return `Profile ${nextIndex}`;
+};
+
+const getDuplicateProfileName = (
+  profiles: GamepadMappingProfile[],
+  sourceName: string
+) => {
+  const existingNames = new Set(profiles.map((profile) => profile.name));
+  const baseName = `${sourceName} Copy`;
+  let name = baseName;
+  let copyIndex = 2;
+
+  while (existingNames.has(name)) {
+    name = `${baseName} ${copyIndex}`;
+    copyIndex += 1;
+  }
+
+  return name;
 };
 
 const getTopActiveLayerMapping = (
@@ -466,6 +684,229 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
     [mappings]
   );
 
+  const getProfiles = useCallback(
+    (gamepadIndex: number): GamepadMappingProfile[] => {
+      const mapping = getMapping(gamepadIndex);
+      return (
+        mapping?.profiles ?? [
+          createEmptyProfileMapping(DEFAULT_PROFILE_ID, DEFAULT_PROFILE_NAME),
+        ]
+      );
+    },
+    [getMapping]
+  );
+
+  const getActiveProfileId = useCallback(
+    (gamepadIndex: number) => {
+      return getMapping(gamepadIndex)?.activeProfileId ?? DEFAULT_PROFILE_ID;
+    },
+    [getMapping]
+  );
+
+  const setActiveProfile = useCallback(
+    (gamepadIndex: number, profileId: string) => {
+      resetRuntimeStateForGamepad(gamepadIndex);
+      setMappings((prev) => {
+        const updated = [...prev];
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        const mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : createGamepadMapping(gamepadIndex);
+
+        if (!mapping.profiles?.some((profile) => profile.id === profileId)) {
+          return prev;
+        }
+
+        mapping.activeProfileId = profileId;
+        syncActiveProfile(mapping);
+
+        if (mappingIndex >= 0) {
+          updated[mappingIndex] = mapping;
+        } else {
+          updated.push(mapping);
+        }
+
+        return updated;
+      });
+    },
+    []
+  );
+
+  const addProfile = useCallback(
+    (gamepadIndex: number) => {
+      const mapping = getMapping(gamepadIndex);
+      const profiles =
+        mapping?.profiles ??
+        createGamepadMapping(gamepadIndex).profiles ??
+        [];
+      const profileId = getNextProfileId(profiles);
+      const profileName = getNextProfileName(profiles);
+
+      resetRuntimeStateForGamepad(gamepadIndex);
+      setMappings((prev) => {
+        const updated = [...prev];
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        const mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : createGamepadMapping(gamepadIndex);
+        const nextProfile = createEmptyProfileMapping(profileId, profileName);
+
+        mapping.profiles = [...(mapping.profiles ?? []), nextProfile];
+        mapping.activeProfileId = nextProfile.id;
+        syncActiveProfile(mapping);
+
+        if (mappingIndex >= 0) {
+          updated[mappingIndex] = mapping;
+        } else {
+          updated.push(mapping);
+        }
+
+        return updated;
+      });
+
+      return profileId;
+    },
+    [getMapping]
+  );
+
+  const duplicateProfile = useCallback(
+    (gamepadIndex: number) => {
+      const mapping = getMapping(gamepadIndex);
+      const normalizedMapping = mapping
+        ? normalizeGamepadMapping(mapping)
+        : createGamepadMapping(gamepadIndex);
+      const profiles = normalizedMapping.profiles ?? [];
+      const sourceProfile = getActiveProfile(normalizedMapping);
+
+      if (!sourceProfile) {
+        return DEFAULT_PROFILE_ID;
+      }
+
+      const profileId = getNextProfileId(profiles);
+      const profileName = getDuplicateProfileName(
+        profiles,
+        sourceProfile.name
+      );
+
+      resetRuntimeStateForGamepad(gamepadIndex);
+      setMappings((prev) => {
+        const updated = [...prev];
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+        const mapping =
+          mappingIndex >= 0
+            ? normalizeGamepadMapping(updated[mappingIndex])
+            : createGamepadMapping(gamepadIndex);
+        const activeProfile = getActiveProfile(mapping);
+
+        if (!activeProfile) {
+          return prev;
+        }
+
+        const nextProfile = cloneProfileMapping(
+          activeProfile,
+          profileId,
+          profileName
+        );
+
+        mapping.profiles = [...(mapping.profiles ?? []), nextProfile];
+        mapping.activeProfileId = nextProfile.id;
+        syncActiveProfile(mapping);
+
+        if (mappingIndex >= 0) {
+          updated[mappingIndex] = mapping;
+        } else {
+          updated.push(mapping);
+        }
+
+        return updated;
+      });
+
+      return profileId;
+    },
+    [getMapping]
+  );
+
+  const renameProfile = useCallback(
+    (gamepadIndex: number, profileId: string, name: string) => {
+      const nextName = name.trim() || "Untitled";
+
+      setMappings((prev) => {
+        const updated = [...prev];
+        const mappingIndex = updated.findIndex(
+          (m) => m.gamepadIndex === gamepadIndex
+        );
+
+        if (mappingIndex < 0) {
+          return prev;
+        }
+
+        const mapping = normalizeGamepadMapping(updated[mappingIndex]);
+        const profile = mapping.profiles?.find(
+          (candidate) => candidate.id === profileId
+        );
+
+        if (!profile) {
+          return prev;
+        }
+
+        profile.name = nextName;
+        syncActiveProfile(mapping);
+        updated[mappingIndex] = mapping;
+        return updated;
+      });
+    },
+    []
+  );
+
+  const removeProfile = useCallback((gamepadIndex: number, profileId: string) => {
+    resetRuntimeStateForGamepad(gamepadIndex);
+    setMappings((prev) => {
+      const updated = [...prev];
+      const mappingIndex = updated.findIndex(
+        (m) => m.gamepadIndex === gamepadIndex
+      );
+
+      if (mappingIndex < 0) {
+        return prev;
+      }
+
+      const mapping = normalizeGamepadMapping(updated[mappingIndex]);
+      const profiles = mapping.profiles ?? [];
+
+      if (profiles.length <= 1) {
+        return prev;
+      }
+
+      const removedProfileIndex = profiles.findIndex(
+        (profile) => profile.id === profileId
+      );
+
+      if (removedProfileIndex < 0) {
+        return prev;
+      }
+
+      const nextProfiles = profiles.filter((profile) => profile.id !== profileId);
+      const fallbackProfile =
+        nextProfiles[Math.max(removedProfileIndex - 1, 0)] ?? nextProfiles[0];
+
+      mapping.profiles = nextProfiles;
+      if (mapping.activeProfileId === profileId) {
+        mapping.activeProfileId = fallbackProfile.id;
+      }
+      syncActiveProfile(mapping);
+      updated[mappingIndex] = mapping;
+      return updated;
+    });
+  }, []);
+
   const getLayers = useCallback(
     (gamepadIndex: number): GamepadLayerMapping[] => {
       const mapping = getMapping(gamepadIndex);
@@ -515,7 +956,8 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           ? normalizeGamepadMapping(updated[mappingIndex])
           : createGamepadMapping(gamepadIndex);
 
-      getOrCreateLayerMapping(mapping, layerIndex);
+      getOrCreateActiveProfileLayer(mapping, layerIndex);
+      syncActiveProfile(mapping);
 
       if (mappingIndex >= 0) {
         updated[mappingIndex] = mapping;
@@ -552,7 +994,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           updated[mappingIndex] = mapping;
         }
 
-        const layer = getOrCreateLayerMapping(mapping, layerIndex);
+        const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+        if (!layer) {
+          return updated;
+        }
         const existingButtonMapping = layer.buttonMappings.find(
           (m) => m.buttonIndex === buttonIndex
         );
@@ -563,7 +1008,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         } else {
           layer.buttonMappings.push({ buttonIndex, key, label, action });
         }
-        syncLegacyBaseLayer(mapping);
+        syncActiveProfile(mapping);
 
         return updated;
       });
@@ -605,7 +1050,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           updated[mappingIndex] = mapping;
         }
 
-        const layer = getOrCreateLayerMapping(mapping, layerIndex);
+        const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+        if (!layer) {
+          return updated;
+        }
 
         if (type === "mouse" || type === "scroll") {
           // For continuous modes, there's only one mapping per stick (direction doesn't matter)
@@ -673,7 +1121,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             });
           }
         }
-        syncLegacyBaseLayer(mapping);
+        syncActiveProfile(mapping);
 
         return updated;
       });
@@ -698,11 +1146,14 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             ? normalizeGamepadMapping(updated[mappingIndex])
             : undefined;
         if (mapping) {
-          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+          if (!layer) {
+            return updated;
+          }
           layer.buttonMappings = layer.buttonMappings.filter(
             (m) => m.buttonIndex !== buttonIndex
           );
-          syncLegacyBaseLayer(mapping);
+          syncActiveProfile(mapping);
           updated[mappingIndex] = mapping;
         }
         return updated;
@@ -728,11 +1179,14 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             ? normalizeGamepadMapping(updated[mappingIndex])
             : undefined;
         if (mapping) {
-          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+          if (!layer) {
+            return updated;
+          }
           layer.axisMappings = layer.axisMappings.filter(
             (m) => !(m.stickIndex === stickIndex && m.direction === direction)
           );
-          syncLegacyBaseLayer(mapping);
+          syncActiveProfile(mapping);
           updated[mappingIndex] = mapping;
         }
         return updated;
@@ -766,7 +1220,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           updated[mappingIndex] = mapping;
         }
 
-        const layer = getOrCreateLayerMapping(mapping, layerIndex);
+        const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+        if (!layer) {
+          return updated;
+        }
         const existingDpadMapping = layer.dpadMappings.find(
           (m) => m.direction === direction
         );
@@ -777,7 +1234,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         } else {
           layer.dpadMappings.push({ direction, key, label, action });
         }
-        syncLegacyBaseLayer(mapping);
+        syncActiveProfile(mapping);
 
         return updated;
       });
@@ -802,11 +1259,14 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             ? normalizeGamepadMapping(updated[mappingIndex])
             : undefined;
         if (mapping) {
-          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+          if (!layer) {
+            return updated;
+          }
           layer.dpadMappings = layer.dpadMappings.filter(
             (m) => m.direction !== direction
           );
-          syncLegacyBaseLayer(mapping);
+          syncActiveProfile(mapping);
           updated[mappingIndex] = mapping;
         }
         return updated;
@@ -837,7 +1297,10 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
           updated[mappingIndex] = mapping;
         }
 
-        const layer = getOrCreateLayerMapping(mapping, layerIndex);
+        const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+        if (!layer) {
+          return updated;
+        }
         const normalizedComboMapping = {
           ...comboMapping,
           inputs: comboMapping.inputs,
@@ -852,7 +1315,7 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
         } else {
           layer.comboMappings.push(normalizedComboMapping);
         }
-        syncLegacyBaseLayer(mapping);
+        syncActiveProfile(mapping);
 
         return updated;
       });
@@ -877,11 +1340,14 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
             : undefined;
 
         if (mapping) {
-          const layer = getOrCreateLayerMapping(mapping, layerIndex);
+          const layer = getOrCreateActiveProfileLayer(mapping, layerIndex);
+          if (!layer) {
+            return updated;
+          }
           layer.comboMappings = layer.comboMappings.filter(
             (comboMapping) => comboMapping.id !== comboId
           );
-          syncLegacyBaseLayer(mapping);
+          syncActiveProfile(mapping);
           updated[mappingIndex] = mapping;
         }
 
@@ -940,6 +1406,43 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   const effectiveMappingsCacheRef = useRef<
     Map<number, EffectiveMappingsSnapshot>
   >(new Map());
+
+  function resetRuntimeStateForGamepad(gamepadIndex: number) {
+    const stateKeyPrefix = `gamepad-${gamepadIndex}-`;
+    const clearStateKeyedMap = <T,>(map: Map<string, T>) => {
+      Array.from(map.keys()).forEach((key) => {
+        if (key.startsWith(stateKeyPrefix)) {
+          map.delete(key);
+        }
+      });
+    };
+    const clearStateKeyedSet = (set: Set<string>) => {
+      Array.from(set).forEach((key) => {
+        if (key.startsWith(stateKeyPrefix)) {
+          set.delete(key);
+        }
+      });
+    };
+
+    clearStateKeyedMap(previousButtonStatesRef.current);
+    clearStateKeyedMap(previousAxisStatesRef.current);
+    clearStateKeyedSet(pendingMouseMovementsRef.current);
+    clearStateKeyedMap(scrollRemainderRef.current);
+    clearStateKeyedMap(lastScrollUpdateTimeRef.current);
+    clearStateKeyedMap(stickMovementStartTimeRef.current);
+    clearStateKeyedMap(previousInternalActionStatesRef.current);
+    clearStateKeyedMap(tapHoldStatesRef.current);
+    clearStateKeyedMap(comboInputPressedAtRef.current);
+    clearStateKeyedMap(activeComboInputsRef.current);
+
+    clearStateKeyedSet(activeComboStateKeysRef.current);
+
+    momentaryLayerHoldersRef.current.delete(gamepadIndex);
+    toggledLayersRef.current.delete(gamepadIndex);
+    defaultLayerRef.current.delete(gamepadIndex);
+    activeLayersRef.current.delete(gamepadIndex);
+    effectiveMappingsCacheRef.current.delete(gamepadIndex);
+  }
 
   const isMouseWheelKey = (key: string) => key.startsWith("MouseWheel");
 
@@ -2072,6 +2575,13 @@ export function useGamepadMapping(gamepads: GamepadState[]) {
   return {
     mappings,
     getMapping,
+    getProfiles,
+    getActiveProfileId,
+    setActiveProfile,
+    addProfile,
+    duplicateProfile,
+    renameProfile,
+    removeProfile,
     getLayers,
     getLayerView,
     ensureLayer,

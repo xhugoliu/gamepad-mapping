@@ -1,4 +1,6 @@
-import { ipcRenderer, contextBridge } from 'electron'
+import electron from 'electron'
+
+const { ipcRenderer, contextBridge } = electron
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
